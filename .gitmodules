@@ -1,0 +1,3 @@
+[submodule "Sigil"]
+	path = Sigil
+	url = https://github.com/exyi/Sigil.git
