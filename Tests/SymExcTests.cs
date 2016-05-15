@@ -14,9 +14,41 @@ using DotVVM.Framework.Compilation.Parser.Dothtml.Parser;
 using DotVVM.Framework.Binding;
 using System.Collections.Generic;
 using SymbolicInterpreter;
+using DotVVM.Framework.Hosting;
+using DotVVM.Framework.Controls.Infrastructure;
 
 namespace Tests
 {
+    class SimpleDotvvmControl: DotvvmControl
+    {
+        public string CssClass
+        {
+            get { return (string)GetValue(CssClassProperty); }
+            set { SetValue(CssClassProperty, value); }
+        }
+        public static readonly DotvvmProperty CssClassProperty
+            = DotvvmProperty.Register<string, SimpleDotvvmControl>(c => c.CssClass, null);
+
+
+        protected override void AddAttributesToRender(IHtmlWriter writer, IDotvvmRequestContext context)
+        {
+            writer.AddAttribute("class", CssClass);
+            base.AddAttributesToRender(writer, context);
+        }
+
+        protected override void RenderBeginTag(IHtmlWriter writer, IDotvvmRequestContext context)
+        {
+            writer.RenderBeginTag("div");
+            base.RenderBeginTag(writer, context);
+        }
+
+        protected override void RenderEndTag(IHtmlWriter writer, IDotvvmRequestContext context)
+        {
+            writer.RenderEndTag();
+            base.RenderEndTag(writer, context);
+        }
+    }
+
     [TestClass]
     public class SymExcTests
     {
@@ -30,7 +62,11 @@ namespace Tests
         [TestInitialize()]
         public void TestInit()
         {
+            ExpressionComparer.Instance.CacheHashValues();
+
             configuration = DotvvmConfiguration.CreateDefault();
+            configuration.Markup.AddAssembly(typeof(SymExcTests).Assembly.FullName);
+            configuration.Markup.AddCodeControl("cc", typeof(SimpleDotvvmControl));
             controlTreeResolver = configuration.ServiceLocator.GetService<IControlTreeResolver>();
             sexec = new SymbolicExecutor();
             controlAnalyzer = new ControlAnalyzer(sexec);
@@ -64,6 +100,24 @@ namespace Tests
             var x = se.Execute(new ExecutionState(), d, new[] { thisP, writerP });
         }
 
+        private ExecutionState ExecNode(string markup)
+        {
+            var tree = ParseSource(markup);
+            var node = tree.Content.First(n => n.Metadata.Type != typeof(RawLiteral));
+            return controlAnalyzer.ExecuteControlLifecycle(node);
+        }
+
+        [TestMethod]
+        public void TestSimpleResolvedControl()
+        {
+            var tree = ParseSource(@"
+<cc:SimpleDotvvmControl CssClass='class123' />");
+            var node = tree.Content.First(n => n.Metadata.Type == typeof(SimpleDotvvmControl));
+            var state = controlAnalyzer.ExecuteControlLifecycle(node);
+            
+            var results = state.SideEffects.Where(s => s.Key == null).Select(k => k.Value).ToArray();
+        }
+
         [TestMethod]
         public void TestResolvedControl1()
         {
@@ -71,7 +125,7 @@ namespace Tests
 <div class='ahoj' />");
             var node = tree.Content.First(n => n.Metadata.Type == typeof(HtmlGenericControl));
 
-            var state = controlAnalyzer.CreateExecutionState(node, MyExpression.RootParameter(typeof(DotvvmControl), "control"));
+            var state = controlAnalyzer.CreateExecutionState(node);
             state = CallMethodHere(state, "GetTagName");
             Assert.AreEqual(state.Stack.Single().Resolve(state).GetConstantValue(), "div");
         }
@@ -88,7 +142,7 @@ namespace Tests
 <div class='ahoj' />");
             var node = tree.Content.First(n => n.Metadata.Type == typeof(HtmlGenericControl));
 
-            var state = controlAnalyzer.CreateExecutionState(node, MyExpression.RootParameter(typeof(DotvvmControl), "control"));
+            var state = controlAnalyzer.CreateExecutionState(node);
             state = state.WithStack(state.Stack.Concat(new[] { MyExpression.RootParameter(typeof(IHtmlWriter), "writer") }));
             state = CallMethodHere(state, "WriteTag");
 
@@ -194,9 +248,11 @@ namespace Tests
 
         private static int ForeachReturnFirstParameter(int p)
         {
-            foreach (var item in YieldEnumeratorParameter(p).Skip(1))
+            int i = 0;
+            foreach (var item in YieldEnumeratorParameter(p)/*.Skip(1)*/)
             {
-                return item;
+                if(i == 1) return item;
+                i++;
             }
             throw new Exception();
         }
@@ -211,6 +267,84 @@ namespace Tests
             var expression = state.Stack.Single().Resolve(state, fullResolve: true);
             Assert.IsTrue(ExpressionComparer.Instance.Equals(expression, Expression.AddChecked(Expression.Constant(1), p)));
         }
+
+        private static int ForeachReturnFirstParameterWhereDivisibleBy(int divisibleBy)
+        {
+            foreach (var item in YieldEnumeratorParameter(5).Where(p => p % divisibleBy == 0))
+            {
+                return item;
+            }
+            throw new Exception();
+        }
+
+        [TestMethod]
+        public void Test_ForeachWhere()
+        {
+            //var p = MyExpression.RootParameter(typeof(int), "input");
+            var state = new ExecutionState().WithStack(new[] { Expression.Constant(2) });
+            state = CallMethodHere(state, nameof(ForeachReturnFirstParameterWhereDivisibleBy));
+            //Assert.ArEqual(state.SideEffects.Count, 0);
+            var expression = state.Stack.Single().Resolve(state, fullResolve: true);
+            Assert.IsTrue(expression.IsConstant());
+            Assert.AreEqual(6, expression.GetConstantValue());
+        }
+
+        static void AddAttributesToWriter(IHtmlWriter writer, Dictionary<string, string> dictionary)
+        {
+            foreach (var attr in dictionary.Where(k => k.Key.StartsWith("a")))
+            {
+                writer.AddAttribute(attr.Key, attr.Value);
+            }
+        }
+
+        static Dictionary<string, string> NewDictionary(string prefix)
+        {
+            var d = new Dictionary<string, string>();
+            d["ahojkey"] = prefix + "ahojvalue";
+            d["akkkkey"] = prefix + "akkkvalue";
+            d["bubakey"] = prefix + "bubavalue";
+            return d;
+        }
+
+        [TestMethod]
+        public void Test_FoerachWhereOnDictionary()
+        {
+            var p1 = MyExpression.RootParameter(typeof(string), "inputValue1");
+
+            var state = new ExecutionState();
+
+            state = CallMethodHere(state.WithStack(new[] { p1 }), nameof(NewDictionary));
+            var dict = state.Stack.Single();
+            var writer = MyExpression.RootParameter(typeof(IHtmlWriter), "writer");
+            state = CallMethodHere(state.WithStack(new[] { writer, dict }), nameof(AddAttributesToWriter));
+        }
+
+        [TestMethod]
+        public void Test_RawHtmlGenericControl()
+        {
+            var state = ExecNode(@"<div></div>");
+            var eff = new HashSet<Expression>(state.SideEffects.Where(k => k.Key == null).Select(k => k.Value), ExpressionComparer.Instance);
+            var str = state.ToString();
+        }
+
+        [TestMethod]
+        public void Test_SimpleAttributeHtmlGenericControl()
+        {
+            var state = ExecNode(@"<div class='class654'></div>");
+            //var eff = new HashSet<Expression>(state.SideEffects.Where(k => k.Key == null).Select(k => k.Value), ExpressionComparer.Instance);
+            var str = state.ToString();
+        }
+
+        [TestMethod]
+        public void Test_BindingAttributeHtmlGenericControl()
+        {
+            var state = ExecNode(@"
+@viewModel System.String
+<div class='{value: _this}'></div>");
+            //var eff = new HashSet<Expression>(state.SideEffects.Where(k => k.Key == null).Select(k => k.Value), ExpressionComparer.Instance);
+            var str = state.ToString();
+        }
+
     }
 
     //public static class EXTT

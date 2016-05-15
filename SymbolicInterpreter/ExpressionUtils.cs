@@ -15,14 +15,15 @@ namespace SymbolicInterpreter
 
         public static bool IsOverrideOf(this MethodInfo method, MethodInfo baseMethod)
         {
+            if (method == baseMethod) return true;
             if (!baseMethod.DeclaringType.IsAssignableFrom(method.DeclaringType)) return false;
             if (baseMethod.DeclaringType.IsInterface)
             {
                 var ifcmap = method.DeclaringType.GetInterfaceMap(baseMethod.DeclaringType);
-                var index = Array.IndexOf(ifcmap.TargetMethods, method);
+                var index = Array.IndexOf(ifcmap.InterfaceMethods, baseMethod);
                 if (index >= 0)
                 {
-                    return ifcmap.InterfaceMethods[index] == baseMethod;
+                    return ExpressionComparer.Equals(ifcmap.TargetMethods[index], method);
                 }
             }
             else

@@ -44,11 +44,13 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AddressOfExpression.cs" />
     <Compile Include="ExecutionState.cs" />
     <Compile Include="ExpressionComparer.cs" />
     <Compile Include="ExpressionSolver.cs" />
     <Compile Include="ExpressionUtils.cs" />
     <Compile Include="ExpressionVisitor.cs" />
+    <Compile Include="FunctionPointerExpression.cs" />
     <Compile Include="MethodAnalyzer.cs" />
     <Compile Include="MyExpression.cs" />
     <Compile Include="MyParameterExpression.cs" />

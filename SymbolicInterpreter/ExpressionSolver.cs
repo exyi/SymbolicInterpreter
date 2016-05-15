@@ -19,17 +19,19 @@ namespace SymbolicInterpreter
                 expr = ((UnaryExpression)expr).Operand;
             }
 
-
-            var expr2 = state.TryFindAssignment(expr);
-            while (expr2 != null)
+            if (state != null)
             {
-                expr = expr2;
-                while (expr.NodeType == ExpressionType.Convert)
+                var expr2 = state.TryFindAssignment(expr);
+                while (expr2 != null)
                 {
-                    expr = ((UnaryExpression)expr).Operand;
-                }
+                    expr = expr2;
+                    while (expr.NodeType == ExpressionType.Convert)
+                    {
+                        expr = ((UnaryExpression)expr).Operand;
+                    }
 
-                expr2 = state.TryFindAssignment(expr2);
+                    expr2 = state.TryFindAssignment(expr2);
+                }
             }
 
             if (expr.NodeType == ExpressionType.Conditional)
@@ -46,6 +48,12 @@ namespace SymbolicInterpreter
             {
                 return expr.Type;
             }
+
+            if (expr is MyParameterExpression)
+            {
+                if (expr.CastTo<MyParameterExpression>().ExactType) return expr.Type;
+            }
+
             // watch for conditions like <P>.GetType() == typeof(WHATEVER)
             return null;
         }
@@ -120,6 +128,8 @@ namespace SymbolicInterpreter
             private bool isFirst = true;
             private IsOnlyTrivialVisitor iotv;
 
+
+
             public ResolvingVisitor(ExecutionState state, bool fullResolve = false, bool paramOnly = false)
             {
                 State = state;
@@ -139,16 +149,27 @@ namespace SymbolicInterpreter
                 this.isFirst = false;
                 node = base.Visit(node);
                 if (node == null) return null;
-                var assignRight = State.TryFindAssignment(node);
-                if (assignRight != null && (!isFirst || !ParamOnly))
+                if ((!isFirst || !ParamOnly))
                 {
-                    if (FullResolve || iotv.IsTrivial(assignRight) || (node is MyParameterExpression && !((MyParameterExpression)node).IsRoot))
+                    var assignRight = State.TryFindAssignment(node);
+                    if (assignRight != null)
                     {
-                        return Visit(assignRight);
+                        if (FullResolve || iotv.IsTrivial(assignRight) || (node is MyParameterExpression && !((MyParameterExpression)node).IsRoot))
+                        {
+                            return Visit(assignRight);
+                        }
+                    }
+                    else Debug.Assert(node.NodeType != ExpressionType.MemberAccess);
+                    if (node.Type == typeof(bool))
+                    {
+                        if (State.Conditions.Contains(node, ExpressionComparer.Instance)) return Expression.Constant(true);
+                        if (node.NodeType != ExpressionType.Not && State.Conditions.Contains(Expression.Not(node), ExpressionComparer.Instance)) return Expression.Constant(false);
                     }
                 }
                 return node;
             }
+
+            protected override Type ProveType(Expression expr) => expr.ProveType(State);
 
             class IsOnlyTrivialVisitor : ExpressionVisitor
             {
@@ -214,6 +235,11 @@ namespace SymbolicInterpreter
                     base.VisitConditional(node);
                     return AllowConditions ? null : node;
                 }
+                protected override Expression VisitAddressOf(AddressOfExpression addrof)
+                {
+                    base.VisitAddressOf(addrof);
+                    return AllowOperators ? null : addrof;
+                }
             }
         }
 
@@ -221,10 +247,13 @@ namespace SymbolicInterpreter
         {
             public override Expression Visit(Expression node)
             {
+                if (node == null) return null;
                 var result = base.Visit(node);
                 Debug.Assert(result.Type == node.Type);
                 return result;
             }
+
+            protected virtual Type ProveType(Expression expr) => expr.ProveType();
 
             protected override Expression VisitMember(MemberExpression node)
             {
@@ -237,6 +266,18 @@ namespace SymbolicInterpreter
                 {
                     var condition = (ConditionalExpression)node.Expression;
                     return Visit(Expression.Condition(condition.Test, node.Update(condition.IfTrue), node.Update(condition.IfFalse)));
+                }
+                else if (node.Expression.IsConstant())
+                {
+                    var value = node.Expression.GetConstantValue();
+                    if (node.Member.Name == "value" && node.Member.DeclaringType.GetGenericTypeDefinition() == typeof(Nullable<>)) return Expression.Constant(value, node.Member.CastTo<FieldInfo>().FieldType);
+                    return Expression.Constant(((FieldInfo)node.Member).GetValue(value), node.Type);
+                }
+                else if (node.Expression.NodeType == ExpressionType.Convert)
+                {
+                    var expr = ((UnaryExpression)node.Expression).Operand;
+                    if (node.Member.DeclaringType.IsAssignableFrom(expr.Type))
+                        return VisitMember(Expression.MakeMemberAccess(expr, node.Member));
                 }
                 return node;
             }
@@ -295,9 +336,15 @@ namespace SymbolicInterpreter
             protected override Expression VisitMethodCall(MethodCallExpression node)
             {
                 node = (MethodCallExpression)base.VisitMethodCall(node);
-                if (node.Object?.IsConstant() != false && node.Arguments.All(s => s.IsConstant()))
+                //if (node.Object?.IsConstant() != false && node.Arguments.All(s => s.IsConstant()))
+                //{
+                //    return Expression.Constant(node.Method.Invoke(node.Object?.GetConstantValue(), node.Arguments.Select(a => a.GetConstantValue()).ToArray()), node.Type);
+                //}
+                if (node.Object?.NodeType == ExpressionType.Convert)
                 {
-                    return Expression.Constant(node.Method.Invoke(node.Object?.GetConstantValue(), node.Arguments.Select(a => a.GetConstantValue()).ToArray()), node.Type);
+                    var expr = node.Object.CastTo<UnaryExpression>().Operand;
+                    if (node.Method.DeclaringType.IsAssignableFrom(expr.Type))
+                        return VisitMethodCall(Expression.Call(expr, node.Method, node.Arguments));
                 }
                 return node;
             }
@@ -306,7 +353,7 @@ namespace SymbolicInterpreter
             protected override Expression VisitBinary(BinaryExpression node)
             {
                 node = (BinaryExpression)base.VisitBinary(node);
-                Debug.Assert(node.Method == null);
+                Debug.Assert(node.Method == null || node.Method.DeclaringType == typeof(string));
                 switch (node.NodeType)
                 {
                     case ExpressionType.Add:
@@ -473,6 +520,13 @@ namespace SymbolicInterpreter
             {
                 node = (UnaryExpression)base.VisitUnary(node);
                 Debug.Assert(node.Method == null);
+
+                if (node.Operand.NodeType == ExpressionType.Conditional)
+                {
+                    var condition = (ConditionalExpression)node.Operand;
+                    return VisitConditional(Expression.Condition(condition.Test, node.Update(condition.IfTrue), node.Update(condition.IfFalse)));
+                }
+
                 switch (node.NodeType)
                 {
                     case ExpressionType.ArrayLength:
@@ -487,7 +541,12 @@ namespace SymbolicInterpreter
                             e => true,
                             e =>
                             {
-                                if (e.NodeType == ExpressionType.Convert && ((UnaryExpression)e).Operand.Type == node.Type) return ((UnaryExpression)e).Operand;
+                                if (e.NodeType == ExpressionType.Convert)
+                                {
+                                    var ecast = e.CastTo<UnaryExpression>();
+                                    if (ecast.Operand.Type == node.Type && !e.Type.IsValueType) return ((UnaryExpression)e).Operand;
+                                    if (!ecast.Operand.Type.IsValueType && !e.Type.IsValueType && e.Type != typeof(object)) return Expression.Convert(ecast.Operand, node.Type);
+                                }
                                 if (e.Type == node.Type) return e;
                                 return null;
                             }) ?? node;
@@ -514,11 +573,12 @@ namespace SymbolicInterpreter
                             e => true,
                             e =>
                             {
-                                var pt = e.ProveType();
+                                var pt = ProveType(e);
                                 if (pt != null)
                                 {
-                                    if (node.Type.IsAssignableFrom(pt)) return Expression.Constant(null, e.Type);
-                                    else return e;
+                                    if (!node.Type.IsAssignableFrom(pt)) return Expression.Constant(null, node.Type);
+                                    else if (pt == node.Type) return e;
+                                    else return Expression.Convert(e, node.Type);
                                 }
                                 return Expression.TypeAs(e, node.Type);
                             }) ?? node;
@@ -528,7 +588,11 @@ namespace SymbolicInterpreter
                     case ExpressionType.Increment:
                         break;
                     case ExpressionType.Unbox:
-                        return node.Operand;
+                        if (node.Operand.IsConstant()) return Expression.Constant(node.Operand.GetConstantValue(), node.Type);
+                        if (node.Operand.NodeType == ExpressionType.Convert &&
+                            node.Operand.Type == typeof(object) &&
+                            node.Operand.CastTo<UnaryExpression>().Operand.Type == node.Type) return node.Operand.CastTo<UnaryExpression>().Operand;
+                        else return VisitUnary(Expression.Convert(node.Operand, node.Type)); 
                     case ExpressionType.OnesComplement:
                         return EvalOnValueSource<UnaryExpression>(node, node.Operand,
                             (dynamic constant) => ~constant,
@@ -540,6 +604,19 @@ namespace SymbolicInterpreter
                         throw new NotImplementedException();
                 }
                 throw new NotImplementedException();
+            }
+            protected override Expression VisitTypeBinary(TypeBinaryExpression node)
+            {
+                node = (TypeBinaryExpression)base.VisitTypeBinary(node);
+                if (node.NodeType == ExpressionType.TypeIs)
+                {
+                    var pt = ProveType(node.Expression);
+                    if (pt != null)
+                    {
+                        return Expression.Constant(node.TypeOperand.IsAssignableFrom(pt));
+                    }
+                }
+                return node;
             }
 
             private Expression EvalOnValueSource<T>(Expression from, Expression expr, Func<object, object> constantValue, Func<T, bool> predicate, Func<T, Expression> transform)

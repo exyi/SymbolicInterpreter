@@ -658,13 +658,21 @@ namespace SymbolicInterpreter
                     else if (op == OpCodes.Initobj)
                     {
                         var type = instr.GetParameterType();
-                        throw new NotSupportedException();
+                        var target = stack.Pop();
+                        if (target is AddressOfExpression)
+                        {
+                            var expr = ((AddressOfExpression)target).Object;
+                            state = SetVar(state.WithStack(stack), expr, Expression.Default(type));
+                            stack = new Stack<Expression>(state.Stack);
+                        }
+                        else throw new NotImplementedException();
                     }
 
                     else if (op == OpCodes.Isinst)
                     {
                         var type = instr.GetParameterType();
                         var p = stack.Pop();
+                        if (p.Type.IsValueType) throw new NotSupportedException();
                         stack.Push(Expression.TypeAs(p, type));
                     }
 
@@ -683,7 +691,7 @@ namespace SymbolicInterpreter
                     else if (op == OpCodes.Ldarga || op == OpCodes.Ldarga_S)
                     {
                         var index = instr.GetParameterIndex();
-                        throw new NotSupportedException();
+                        stack.Push(new AddressOfExpression(mc.Parameters[index]));
                     }
 
                     else if (op == OpCodes.Ldc_I4 ||
@@ -746,14 +754,15 @@ namespace SymbolicInterpreter
                     else if (op == OpCodes.Ldflda)
                     {
                         var fld = instr.GetParameterField();
-                        throw new NotSupportedException();
+                        var target = stack.Pop();
+                        stack.Push(new AddressOfExpression(Expression.Field(target, fld)));
                     }
 
                     else if (op == OpCodes.Ldftn)
                     {
                         // load function pointer
-                        var mtd = instr.GetParameterMethod();
-                        throw new NotSupportedException();
+                        var mtd = instr.GetParameterMethod().CastTo<MethodInfo>();
+                        stack.Push(new FunctionPointerExpression(mtd));
                     }
 
                     //if (op == OpCodes.Ldind_I)
@@ -934,7 +943,7 @@ namespace SymbolicInterpreter
                     else if (op == OpCodes.Ldloca || op == OpCodes.Ldloca_S)
                     {
                         var index = instr.GetParameterIndex();
-                        throw new NotSupportedException();
+                        stack.Push(new AddressOfExpression(mc.Locals[index]));
                     }
 
                     else if (op == OpCodes.Ldnull)
@@ -954,13 +963,22 @@ namespace SymbolicInterpreter
                     else if (op == OpCodes.Ldsfld)
                     {
                         var field = instr.GetParameterField();
-                        stack.Push(Expression.Field(null, field));
+                        object value;
+                        if (MethodAnalyzer.IsConstantField(field, out value))
+                        {
+                            stack.Push(Expression.Constant(value, field.FieldType));
+                        }
+                        else
+                        {
+                            state = AddResultEffect(state.ClearStack(), true, Expression.Field(null, field));
+                            stack.Push(state.Stack.Single());
+                        }
                     }
 
                     else if (op == OpCodes.Ldsflda)
                     {
                         var field = instr.GetParameterField();
-                        throw new NotSupportedException();
+                        stack.Push(new AddressOfExpression(Expression.Field(null, field)));
                     }
 
                     else if (op == OpCodes.Ldstr)
@@ -987,7 +1005,7 @@ namespace SymbolicInterpreter
                         {
                             stack.Push(Expression.Constant(asType.TypeHandle));
                         }
-                        throw new Exception("Unexpected operand for ldtoken [" + instr.Parameters[0] + "]");
+                        else throw new Exception("Unexpected operand for ldtoken [" + instr.Parameters[0] + "]");
                     }
 
                     else if (op == OpCodes.Ldvirtftn)
@@ -1165,17 +1183,14 @@ namespace SymbolicInterpreter
                         stack = new Stack<Expression>(state.Stack);
                     }
 
-                    //if (op == OpCodes.Stelem)
-                    //{
-                    //    var type = (Type)operands[0];
-                    //    return
-                    //        new Operation<DelegateType>
-                    //        {
-                    //            OpCode = op,
-                    //            Parameters = new object[] { type },
-                    //            Replay = emit => emit.StoreElement(type)
-                    //        };
-                    //}
+                    else if (op == OpCodes.Stelem)
+                    {
+                        var type = instr.GetParameterType();
+                        var value = ImplicitConvertTo(stack.Pop(), type);
+                        var index = stack.Pop();
+                        var array = stack.Pop();
+                        state = SetArrayElement(state, array, index, value);
+                    }
 
                     //if (op == OpCodes.Stelem_I)
                     //{
@@ -1423,20 +1438,12 @@ namespace SymbolicInterpreter
                     //        };
                     //}
 
-                    //if (op == OpCodes.Stsfld)
-                    //{
-                    //    var fld = (FieldInfo)operands[0];
-                    //    var isVolatile = prefixes.HasVolatile;
-                    //    var unaligned = prefixes.HasUnaligned ? prefixes.Unaligned : null;
-
-                    //    return
-                    //        new Operation<DelegateType>
-                    //        {
-                    //            OpCode = op,
-                    //            Parameters = new object[] { fld, isVolatile, unaligned },
-                    //            Replay = emit => emit.StoreField(fld, isVolatile, unaligned)
-                    //        };
-                    //}
+                    else if (op == OpCodes.Stsfld)
+                    {
+                        var fld = instr.GetParameterField();
+                        var value = stack.Pop();
+                        state = AddResultEffect(state, false, Expression.Assign(Expression.Field(null, fld), value));
+                    }
 
                     else if (op == OpCodes.Sub)
                     {
@@ -1461,8 +1468,21 @@ namespace SymbolicInterpreter
 
                     else if (op == OpCodes.Switch)
                     {
-                        var labels = instr.Parameters.Cast<Sigil.Label>().ToArray();
-                        throw new NotSupportedException();
+                        var labels = (Sigil.Label[])instr.Parameters[0];
+                        var val = stack.Pop().Resolve(state);
+                        if (val.IsConstant())
+                        {
+                            var num = (val.GetConstantValue() is IConvertible) ? ((IConvertible)val.GetConstantValue()).ToInt32(null) : (int)(dynamic)val.GetConstantValue();
+                            if (num < labels.Length)
+                            {
+                                results.SetBranching(labels[num]);
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            throw new NotSupportedException();
+                        }
                     }
 
                     else if (op == OpCodes.Tailcall)
@@ -1493,7 +1513,12 @@ namespace SymbolicInterpreter
                     {
                         var type = instr.GetParameterType();
                         var obj = stack.Pop();
-                        stack.Push(Expression.Unbox(obj, type));
+                        if (obj.Type.IsValueType)
+                        {
+                            Debug.Assert(obj.Type == type);
+                            stack.Push(obj);
+                        }
+                        else stack.Push(Expression.Unbox(obj, type));
                     }
 
                     else if (op == OpCodes.Volatile)
@@ -1548,7 +1573,7 @@ namespace SymbolicInterpreter
 
             if (results.Branch != null)
             {
-                state = state.WithStack(stack);
+                state = state.WithStack(stack).ResolveStack();
                 var condition = results.Branch.Resolve(state);
                 Debug.Assert(condition.Type == typeof(bool));
                 if (condition.NodeType == ExpressionType.Constant)
@@ -1570,7 +1595,7 @@ namespace SymbolicInterpreter
                     stateTrue = ExecCore(mc, stateTrue, FindLabel(mc.Disassembly, results.BranchTo));
                     stateFalse = ExecCore(mc, stateFalse, eip + 1);
 
-                    state = MergeState(state, condition, stateTrue, stateFalse);
+                    return MergeState(state, condition, stateTrue, stateFalse);
                 }
             }
 
@@ -1581,7 +1606,7 @@ namespace SymbolicInterpreter
             {
                 if (results.Return.NodeType == ExpressionType.Default && results.Return.Type == typeof(void))
                     return state.WithStack(new Expression[0]);
-                else return state.WithStack(new[] { results.Return });
+                else return state.WithStack(new[] { ImplicitConvertTo(results.Return, mc.Disassembly.ReturnType).Resolve(state) });
             }
 
             return state;
@@ -1590,6 +1615,8 @@ namespace SymbolicInterpreter
         [SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity")]
         public static ExecutionState MergeState(ExecutionState root, Expression condition, ExecutionState trueBranch, ExecutionState falseBranch)
         {
+            trueBranch = trueBranch.ResolveStack();
+            falseBranch = falseBranch.ResolveStack();
             var addAssignments = new List<KeyValuePair<Expression, Expression>>();
             foreach (var assignment in trueBranch.SetExpressions)
             {
@@ -1673,16 +1700,30 @@ namespace SymbolicInterpreter
             var args = new List<Expression>();
             var methodParameters = method.GetParameters();
             if (!method.IsStatic) args.Add(stack[stack.Length - methodParameters.Length - 1]);
-            args.AddRange(methodParameters.Zip(stack.Skip(stack.Length - methodParameters.Length), (p, a) => ImplicitConvertTo(a, p.ParameterType)));
+            args.AddRange(methodParameters.Zip(stack.Skip(stack.Length - methodParameters.Length), (p, a) => ImplicitConvertTo(a, p.ParameterType).Simplify()));
 
             Debug.Assert(args.Count == methodParameters.Length + (method.IsStatic ? 0 : 1));
 
-            if (MethodAnalyzer.IsResultEffect(method))
+            //int instanceOffset = method.IsStatic ? 0 : 1;
+            //for (int i = 0; i < methodParameters.Length; i++)
+            //{
+            //    if (args[i + instanceOffset].Type != methodParameters[i].ParameterType) args[i + instanceOffset] = ImplicitConvertTo(args[i + instanceOffset], methodParameters[i].ParameterType);
+            //}
+
+            //for (int i = 0; i < args.Count; i++)
+            //{
+            //    args[i] = args[i].Simplify();
+            //}
+
+            if (method.DeclaringType.IsInterface)
             {
-                return SetResultEffect(method, state, args);
+                var vvv = MethodAnalyzer.GetSpecialExecutor(method, args)?.Invoke(this, state, args, method);
+                if (vvv != null) return vvv;
+                if (MethodAnalyzer.IsResultEffect(method))
+                {
+                    return AddResultEffect(method, state, args);
+                }
             }
-            var vv = MethodAnalyzer.GetSpecialExecutor(method, args);
-            if (vv != null) return vv(this, state, args, method);
 
             if (!method.IsStatic)
             {
@@ -1700,34 +1741,39 @@ namespace SymbolicInterpreter
                     {
                         throw new NotImplementedException("Could not prove virtual call method");
                     }
-                    var baseMethod = (MethodInfo)method;
-                    method = instanceType.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
-                        .Single(m => m.IsOverrideOf(baseMethod)); // TODO: not sure if it works on private/static methods
+                    if (method.DeclaringType != instanceType)
+                    {
+                        var baseMethod = (MethodInfo)method;
+                        method = instanceType.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.FlattenHierarchy)
+                            .Single(m => m.IsOverrideOf(baseMethod)); // TODO: not sure if it works on private/static methods
+                    }
                     Debug.Assert(method != null);
                 }
             }
 
-            int instanceOffset = method.IsStatic ? 0 : 1;
-            for (int i = 0; i < methodParameters.Length; i++)
-            {
-                if (args[i + instanceOffset].Type != methodParameters[i].ParameterType) args[i + instanceOffset] = Expression.Convert(args[i + instanceOffset], methodParameters[i].ParameterType);
-            }
-
             if (!method.IsStatic && args[0].Type != method.DeclaringType)
             {
-                args[0] = Expression.Convert(args[0], method.DeclaringType);
+                if (args[0] is AddressOfExpression && args[0].Type.GetElementType() == method.DeclaringType)
+                    args[0] = ((AddressOfExpression)args[0]).Object;
+                else args[0] = ImplicitConvertTo(args[0], method.DeclaringType, force: true).Simplify();
             }
 
+            var vv = MethodAnalyzer.GetSpecialExecutor(method, args)?.Invoke(this, state, args, method);
+            if (vv != null) return vv;
             if (MethodAnalyzer.IsPure(method) && method is MethodInfo)
             {
-                return state.ReplaceTopStack(args.Count, new[] { CreateCallExpression((MethodInfo)method, args) });
+                var f = CreateCallExpression((MethodInfo)method, args);
+                Expression ff = f;
+                if (args.All(a => a.IsConstant()))
+                {
+                    ff = Expression.Constant(f.Method.Invoke(f.Object?.GetConstantValue(), f.Arguments.Select(ExpressionUtils.GetConstantValue).ToArray()));
+                }
+                return state.ReplaceTopStack(args.Count, new[] { ff });
             }
             if (MethodAnalyzer.IsResultEffect(method))
             {
-                return SetResultEffect(method, state, args);
+                return AddResultEffect(method, state, args);
             }
-            vv = MethodAnalyzer.GetSpecialExecutor(method, args);
-            if (vv != null) return vv(this, state, args, method);
 
             Debug.Assert(!method.DeclaringType.IsInterface);
             Debug.Assert(method.GetMethodBody() != null);
@@ -1745,16 +1791,22 @@ namespace SymbolicInterpreter
             else return state;
         }
 
-        private ExecutionState SetResultEffect(MethodBase method, ExecutionState state, List<Expression> args)
+        public ExecutionState AddResultEffect(MethodBase method, ExecutionState state, List<Expression> args)
         {
             var hasResult = (method is MethodInfo && ((MethodInfo)method).ReturnType != typeof(void));
-            var eff = CreateCallExpression((MethodInfo)method, args);
-            var newstack = hasResult ? new[] { MyExpression.RootParameter(eff.Type, "__sideEffectParam_" + Interlocked.Increment(ref pcnt)) } : new Expression[0];
-            if (hasResult) eff = Expression.Assign(newstack[0], eff);
-            return state.AddSideEffect(eff).ReplaceTopStack(args.Count, newstack);
+            var eff = CreateCallExpression((MethodInfo)method, args).Simplify();
+            return AddResultEffect(state.ReplaceTopStack(args.Count, new Expression[0]), hasResult, eff);
         }
 
-        public Expression CreateCallExpression(MethodInfo method, IEnumerable<Expression> parameters)
+        public ExecutionState AddResultEffect(ExecutionState state, bool hasResult, Expression eff)
+        {
+            //Debug.Assert(eff == eff.Simplify());
+            var newstack = hasResult ? new[] { MyExpression.RootParameter(eff.Type, "__sideEffectParam_" + Interlocked.Increment(ref pcnt)) } : new Expression[0];
+            if (hasResult) eff = Expression.Assign(newstack[0], eff);
+            return state.AddSideEffect(eff).ReplaceTopStack(0, newstack);
+        }
+
+        public MethodCallExpression CreateCallExpression(MethodInfo method, IEnumerable<Expression> parameters)
         {
             if (method.IsStatic) return Expression.Call(method, parameters);
             else return Expression.Call(parameters.First(), method, parameters.Skip(1));
@@ -1763,24 +1815,50 @@ namespace SymbolicInterpreter
         public ExecutionState CallCtor(ConstructorInfo ctor, ExecutionState state)
         {
             // TODO: stack handling is probably wrong
-            var stack = new Stack<Expression>(state.Stack);
-            Debug.Assert(stack.Count >= ctor.GetParameters().Length);
+            var parameters = ctor.GetParameters();
+            var leftstack = state.Stack.Take(state.Stack.Length - parameters.Length).ToArray();
+            var stack = new Stack<Expression>(state.Stack.Skip(state.Stack.Length - parameters.Length).Reverse());
+            Debug.Assert(stack.Count == parameters.Length);
 
-            var args = ctor.GetParameters().Select(p => ImplicitConvertTo(stack.Pop(), p.ParameterType).Resolve(state)).ToArray();
+            var args = parameters.Select(p => ImplicitConvertTo(stack.Pop(), p.ParameterType).Resolve(state)).ToArray();
             var thisExpression = MyExpression.RootParameter(ctor.DeclaringType, "__this" + Interlocked.Increment(ref pcnt), notNull: true, exactType: true);
-            state = state.WithSet(thisExpression, Expression.New(ctor, args));
-            if (!MethodAnalyzer.IsStandardCtor(ctor))
-            {
-                foreach (var fld in ctor.DeclaringType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
-                {
-                    state = state.WithSet(Expression.Field(thisExpression, fld), Expression.Default(fld.FieldType).Simplify());
-                }
 
-                var disassembly = Disassembly(ctor);
-                state = Execute(state, disassembly, new[] { thisExpression }.Concat(args).ToArray());
+            if(typeof(Delegate).IsAssignableFrom(ctor.DeclaringType))
+            {
+                Debug.Assert(args[1] is FunctionPointerExpression);
+                state = state.WithSet(thisExpression, Expression.New(ctor, args));
             }
-            stack.Push(thisExpression);
-            return state.WithStack(stack);
+            else if (MethodAnalyzer.IsPure(ctor) && args.All(a => a.NodeType == ExpressionType.Constant))
+            {
+                state = state.WithSet(thisExpression, Expression.Constant(ctor.Invoke(args.Select(a => a.GetConstantValue()).ToArray())));
+            }
+            else
+            {
+                state = state.WithSet(thisExpression, Expression.New(ctor, args));
+
+                state = InitObject(state, thisExpression);
+
+                var specExec = MethodAnalyzer.GetSpecialExecutor(ctor, args);
+                if (specExec != null)
+                {
+                    state = specExec(this, state, args, ctor);
+                }
+                else
+                {
+                    var disassembly = Disassembly(ctor);
+                    state = Execute(state, disassembly, new[] { thisExpression }.Concat(args).ToArray());
+                }
+            }
+            return state.WithStack(leftstack.Concat(new[] { thisExpression }));
+        }
+
+        public ExecutionState InitObject(ExecutionState state, Expression thisExpression)
+        {
+            foreach (var fld in thisExpression.Type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            {
+                state = state.WithSet(Expression.Field(thisExpression, fld), Expression.Default(fld.FieldType).Simplify());
+            }
+            return state;
         }
 
         public static int FindLabel(DisassemblyResult disassembly, Sigil.Label label)
@@ -1834,6 +1912,8 @@ namespace SymbolicInterpreter
             }
         }
 
+        public static string NameParam(string name) => name + Interlocked.Increment(ref pcnt);
+
         static KeyValuePair<Expression, Expression>[] SetVarCore(Expression left, Expression right)
         {
             if (left is MyParameterExpression)
@@ -1842,7 +1922,8 @@ namespace SymbolicInterpreter
             }
 
             // add root parameter for mutable value types or when right is not parameter (unless right is primitive constant)
-            if ((right is MyParameterExpression || (right.IsConstant() && right.Type.IsPrimitive)) && (!right.Type.IsValueType || right.Type.IsPrimitive || true)) // TODO: handle mutable structs correctly
+            if ((right is MyParameterExpression || (right.IsConstant() && (right.Type.IsPrimitive || right.GetConstantValue() == null))) &&
+                (!right.Type.IsValueType || right.Type.IsPrimitive || true)) // TODO: handle mutable structs correctly
             {
                 if (right.Type != left.Type)
                 {
@@ -1853,7 +1934,7 @@ namespace SymbolicInterpreter
             }
             else
             {
-                Expression parameterExpression = MyExpression.RootParameter(right.Type, $"__setPar{Interlocked.Increment(ref pcnt)}");
+                Expression parameterExpression = MyExpression.RootParameter(right.Type, NameParam("__setPar"));
 
                 Expression rightParameter = parameterExpression;
                 if (right.Type != left.Type)
@@ -1867,6 +1948,18 @@ namespace SymbolicInterpreter
                     new KeyValuePair<Expression, Expression>(left, rightParameter)
                 };
             }
+        }
+
+        public static ExecutionState SetArrayElement(ExecutionState state, Expression array, Expression index, Expression value)
+        {
+            index = index.Resolve(state);
+            array = array.Resolve(state);
+            value = value.Resolve(state);
+            if (index.IsConstant())
+            {
+                return state.WithSet(Expression.ArrayIndex(array, index), value);
+            }
+            else throw new NotImplementedException();
         }
 
         private static Expression AddEnvParameter(ref ExecutionState state, Expression expr)

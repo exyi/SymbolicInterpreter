@@ -65,7 +65,7 @@ namespace SymbolicInterpreter
             else return null;
         }
 
-        public static Expression ImplicitConvertTo(Expression from, Type to, bool throwExc = true)
+        public static Expression ImplicitConvertTo(Expression from, Type to, bool throwExc = true, bool force = false)
         {
             var type = from.Type;
             if (type == to) return from;
@@ -73,14 +73,26 @@ namespace SymbolicInterpreter
             {
                 return Expression.Convert(from, to);
             }
-            else if(to == typeof(bool))
+            else if (to == typeof(bool))
             {
                 return ConvertToBool(from, throwExc);
+            }
+            else if (from.Type.IsByRef && from.Type.GetElementType().IsValueType && to == typeof(object))
+            {
+                if (from is AddressOfExpression)
+                    return Expression.Convert(((AddressOfExpression)from).Object, typeof(object));
+                else throw new Exception("cant unreference");
             }
             else if (to.IsAssignableFrom(from.Type))
                 return Expression.Convert(from, to);
 
-            if (throwExc) throw new NotSupportedException();
+            if (from.NodeType == ExpressionType.Convert && !from.Type.IsValueType)
+                return ImplicitConvertTo(((UnaryExpression)from).Operand, to, throwExc);
+            else if ((from.IsConstant() && from.GetConstantValue() == null) || (from.NodeType == ExpressionType.Default && !from.Type.IsValueType))
+                return Expression.Constant(null, to);
+
+            if (force) return Expression.Convert(from, to);
+            else if (throwExc) throw new NotSupportedException();
             else return null;
         }
 
@@ -88,7 +100,7 @@ namespace SymbolicInterpreter
         {
             if (a.Type == b.Type) return;
             var a2b = ImplicitConvertTo(a, b.Type, false);
-            if(a2b != null)
+            if (a2b != null)
             {
                 a = a2b;
                 return;

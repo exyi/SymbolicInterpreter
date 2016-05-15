@@ -41,13 +41,20 @@ namespace SymbolicInterpreter
             this.Stack = Emptystack;
         }
 
+        [Pure]
+        public IEnumerable<Expression> GetConditions() => Conditions.Concat(Parent?.Conditions ?? Enumerable.Empty<Expression>());
+
+        [Pure]
+        public IEnumerable<KeyValuePair<Expression, Expression>> GetSetExpressions()
+            => Parent == null ? SetExpressions : SetExpressions.Concat(Parent.SetExpressions);
+
         // modifiers
         [Pure]
         public ExecutionState Nest(params Expression[] conditions)
-            => new ExecutionState(conditions: conditions.ToImmutableList(), parent: this);
+            => new ExecutionState(conditions: conditions.ToImmutableList(), parent: this, stack: Stack);
         [Pure]
         public ExecutionState Nest(IEnumerable<Expression> conditions)
-            => new ExecutionState(conditions: conditions.ToImmutableList(), parent: this);
+            => new ExecutionState(conditions: conditions.ToImmutableList(), parent: this, stack: Stack);
         [Pure]
         public ExecutionState AddCondition(Expression expr)
         {

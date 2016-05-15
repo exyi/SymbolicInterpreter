@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -17,6 +18,21 @@ namespace SymbolicInterpreter
         {
             if (cacheHashValues) CacheHashValues();
         }
+
+        public static bool Equals(MemberInfo a, MemberInfo b)
+        {
+            if (a == b) return true;
+            if (a == null || b == null) return false;
+            if (a.MetadataToken != b.MetadataToken) return false;
+            if (a.DeclaringType.Assembly == b.DeclaringType.Assembly) return true;
+            throw new NotImplementedException();
+        }
+
+        public static int GetHashCode(MemberInfo mi)
+        {
+            return mi.MetadataToken * 17 + mi.DeclaringType.TypeHandle.Value.GetHashCode();
+        }
+
         [SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity")]
         public bool Equals(Expression x, Expression y)
         {
@@ -25,6 +41,8 @@ namespace SymbolicInterpreter
             var type = x.NodeType;
             if (y.NodeType != type) return false;
             if (x.Type != y.Type) return false;
+            Tuple<int> hashx, hashy;
+            if (HashCache != null && HashCache.TryGetValue(x, out hashx) && HashCache.TryGetValue(x, out hashy) && hashy.Item1 != hashx.Item1) return false;
 
             switch (type)
             {
@@ -75,11 +93,11 @@ namespace SymbolicInterpreter
                 case ExpressionType.Coalesce:
                     var binX = (BinaryExpression)x;
                     var binY = (BinaryExpression)y;
-                    return binX.Method == binY.Method && Equals(binX.Left, binY.Left) && Equals(binX.Right, binY.Right);
+                    return Equals(binX.Method, binY.Method) && Equals(binX.Left, binY.Left) && Equals(binX.Right, binY.Right);
                 case ExpressionType.Call:
                     var callX = (MethodCallExpression)x;
                     var callY = (MethodCallExpression)y;
-                    return callX.Method == callY.Method && Equals(callX.Object, callY.Object) && callX.Arguments.Zip(callY.Arguments, Equals).All(f => f);
+                    return Equals(callX.Method, callY.Method) && Equals(callX.Object, callY.Object) && callX.Arguments.Zip(callY.Arguments, Equals).All(f => f);
                 case ExpressionType.ConvertChecked:
                 case ExpressionType.Negate:
                 case ExpressionType.UnaryPlus:
@@ -92,7 +110,7 @@ namespace SymbolicInterpreter
                 case ExpressionType.ArrayLength:
                     var unX = (UnaryExpression)x;
                     var unY = (UnaryExpression)y;
-                    return unX.Method == unY.Method && Equals(unX.Operand, unY.Operand);
+                    return Equals(unX.Method, unY.Method) && Equals(unX.Operand, unY.Operand);
                 case ExpressionType.Conditional:
                     var condX = (ConditionalExpression)x;
                     var condY = (ConditionalExpression)y;
@@ -116,7 +134,7 @@ namespace SymbolicInterpreter
                 case ExpressionType.MemberAccess:
                     var memX = (MemberExpression)x;
                     var memY = (MemberExpression)y;
-                    return memX.Member == memY.Member && Equals(memX.Expression, memY.Expression);
+                    return Equals(memX.Member, memY.Member) && Equals(memX.Expression, memY.Expression);
                 case ExpressionType.MemberInit:
                     var minitX = (MemberInitExpression)x;
                     var minitY = (MemberInitExpression)y;
@@ -125,7 +143,7 @@ namespace SymbolicInterpreter
                 case ExpressionType.New:
                     var newX = (NewExpression)x;
                     var newY = (NewExpression)y;
-                    return newX.Constructor == newY.Constructor && newX.Arguments.Zip(newY.Arguments, Equals).All(f => f);
+                    return Equals(newX.Constructor, newY.Constructor) && newX.Arguments.Zip(newY.Arguments, Equals).All(f => f);
                 case ExpressionType.NewArrayInit:
                 case ExpressionType.NewArrayBounds:
                     var newArrX = (NewArrayExpression)x;
@@ -147,6 +165,11 @@ namespace SymbolicInterpreter
                     var blockY = (BlockExpression)y;
                     return blockX.Variables.SequenceEqual(blockY.Variables, this) &&
                         blockY.Expressions.SequenceEqual(blockY.Expressions, this);
+                case ExpressionType.Index:
+                    var indexX = (IndexExpression)x;
+                    var indexY = (IndexExpression)y;
+                    return Equals(indexX.Indexer, indexY.Indexer) && indexX.Arguments.SequenceEqual(indexY.Arguments, this) &&
+                        Equals(indexX.Object, indexY.Object);
                 case ExpressionType.Extension:
                     //Debug.Assert(x is MyParameterExpression);
                     return x.Equals(y);
@@ -155,11 +178,11 @@ namespace SymbolicInterpreter
             }
         }
 
-        public IDictionary<Expression, int> HashCache { get; set; }
+        System.Runtime.CompilerServices.ConditionalWeakTable<Expression, Tuple<int>> HashCache { get; set; }
 
         public void CacheHashValues()
         {
-            if (HashCache == null) HashCache = new Dictionary<Expression, int>();
+            if (HashCache == null) HashCache = new System.Runtime.CompilerServices.ConditionalWeakTable<Expression, Tuple<int>>();
         }
 
         int GetHashCode(IEnumerable<Expression> expressions)
@@ -180,8 +203,8 @@ namespace SymbolicInterpreter
                 if (obj == null) return 0x77777777;
                 if (HashCache != null)
                 {
-                    int chash;
-                    if (HashCache.TryGetValue(obj, out chash)) return chash;
+                    Tuple<int> chash;
+                    if (HashCache.TryGetValue(obj, out chash)) return chash.Item1;
                 }
                 var type = obj.NodeType;
                 var hash = 0x555555555;
@@ -244,7 +267,7 @@ namespace SymbolicInterpreter
                     case ExpressionType.Call:
                         var call = (MethodCallExpression)obj;
                         hash *= 19;
-                        hash += call.Method.GetHashCode();
+                        hash += GetHashCode(call.Method);
                         hash *= 23;
                         hash += GetHashCode(call.Object);
                         foreach (var arg in call.Arguments)
@@ -269,7 +292,7 @@ namespace SymbolicInterpreter
                         if (un.Method != null)
                         {
                             hash *= 17;
-                            hash += un.Method.GetHashCode();
+                            hash += GetHashCode(un.Method);
                         }
                         break;
                     case ExpressionType.Conditional:
@@ -306,14 +329,16 @@ namespace SymbolicInterpreter
                         foreach (var ini in linit.Initializers)
                         {
                             hash *= 23;
-                            hash += ini.GetHashCode();
+                            hash += GetHashCode(ini.AddMethod);
+                            hash *= 29;
+                            hash += GetHashCode(ini.Arguments);
                         }
                         break;
                     case ExpressionType.MemberAccess:
                         var mem = (MemberExpression)obj;
                         hash *= 23;
-                        hash += mem.Member.GetHashCode();
-                        hash *= 17;
+                        hash += GetHashCode(mem.Member);
+                        hash *= 19;
                         hash += GetHashCode(mem.Expression);
                         break;
                     case ExpressionType.MemberInit:
@@ -323,7 +348,7 @@ namespace SymbolicInterpreter
                     case ExpressionType.New:
                         var newe = (NewExpression)obj;
                         hash *= 31;
-                        hash += newe.Constructor.GetHashCode();
+                        hash += GetHashCode(newe.Constructor);
                         foreach (var arg in newe.Arguments)
                         {
                             hash *= 29;
@@ -385,12 +410,19 @@ namespace SymbolicInterpreter
                         break;
                     case ExpressionType.Extension:
                         hash += obj.ToString().GetHashCode(); break;
+                    case ExpressionType.Index:
+                        var indexExpr = (IndexExpression)obj;
+                        hash += GetHashCode(indexExpr.Arguments);
+                        hash += indexExpr.Indexer?.GetHashCode() ?? 6453124768463154687;
+                        hash *= 47;
+                        hash += GetHashCode(indexExpr.Object);
+                        break;
                     default:
                         throw new NotImplementedException($"GetHasCode of expression type { type } is not supported.");
                 }
                 hash *= 4611686018427387847;
 
-                if (HashCache != null) HashCache[obj] = (int)hash;
+                if (HashCache != null) HashCache.Add(obj, Tuple.Create((int)hash));
 
                 return (int)hash;
             }

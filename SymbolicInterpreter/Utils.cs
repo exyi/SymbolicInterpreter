@@ -30,6 +30,8 @@ namespace SymbolicInterpreter
             return NumericTypes.Contains(type);
         }
 
+        public static To CastTo<To>(this object o) => (To)o;
+        [Obsolete]
         public static BlockExpression TrackParameters(this ExecutionState state)
         {
             var result = new List<Expression>();
@@ -42,7 +44,7 @@ namespace SymbolicInterpreter
 
             return Expression.Block(result);
         }
-
+        [Obsolete]
         public static BlockExpression TrackParameters(this ExecutionState state, Expression parameter)
         {
             var assignment = state.TryFindAssignment(parameter);
@@ -54,7 +56,7 @@ namespace SymbolicInterpreter
             }
             return Expression.Block(result);
         }
-
+        [Obsolete]
         private static void TrackParametersCore(List<Expression> result, HashSet<Expression> doneMap, ExecutionState state, Expression left, Expression right)
         {
             if (doneMap.Contains(left)) return;
@@ -70,7 +72,7 @@ namespace SymbolicInterpreter
             }
 
             doneMap.Add(left);
-            result.Add(Expression.Assign(left, right));
+            try { result.Add(Expression.Assign(left, right)); } catch { }
 
             // write also object modifications
             foreach (var pp in TrackParam(state, left))
@@ -82,13 +84,20 @@ namespace SymbolicInterpreter
         /// <summary>
         /// Returns all assignments that contain parameter on the left side.
         /// </summary>
+        [Obsolete]
         private static IEnumerable<BinaryExpression> TrackParam(ExecutionState state, Expression parameter)
         {
             foreach (var se in state.SetExpressions)
             {
                 if (se.Key.Contains(parameter))
                 {
-                    yield return Expression.Assign(se.Key, se.Value);
+                    BinaryExpression x = null;
+                    try
+                    {
+                        x = Expression.Assign(se.Key, se.Value);
+                    }
+                    catch { }
+                    if (x != null) yield return x;
                 }
             }
         }
@@ -113,7 +122,7 @@ namespace SymbolicInterpreter
             return (string)prop.GetValue(PrepareForDebugViewVisitor.Instance.Visit(expr));
         }
 
-        class PrepareForDebugViewVisitor: ExpressionVisitor
+        class PrepareForDebugViewVisitor : ExpressionVisitor
         {
             public static readonly PrepareForDebugViewVisitor Instance = new PrepareForDebugViewVisitor();
 
