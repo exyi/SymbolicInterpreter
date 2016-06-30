@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -9,28 +10,8 @@ namespace SymbolicInterpreter
 {
     public static class Utils
     {
-        private static readonly HashSet<Type> NumericTypes = new HashSet<Type>()
-        {
-            typeof (sbyte),
-            typeof (byte),
-            typeof (short),
-            typeof (ushort),
-            typeof (int),
-            typeof (uint),
-            typeof (long),
-            typeof (ulong),
-            typeof (char),
-            typeof (float),
-            typeof (double),
-            typeof (decimal)
-        };
-
-        public static bool IsNumericType(this Type type)
-        {
-            return NumericTypes.Contains(type);
-        }
-
         public static To CastTo<To>(this object o) => (To)o;
+        public static To As<To>(this object o) where To: class => o as To;
         [Obsolete]
         public static BlockExpression TrackParameters(this ExecutionState state)
         {
@@ -102,68 +83,19 @@ namespace SymbolicInterpreter
             }
         }
 
-        public static IEnumerable<ParameterExpression> GetUsedParameters(this Expression expr)
-        {
-            var v = new ParameterFindingVisitor();
-            v.Visit(expr);
-            return v.Parameters;
-        }
-
-        public static bool Contains(this Expression expr, Expression query)
-        {
-            var ctv = new ContainsVisitor() { Query = query };
-            ctv.Visit(expr);
-            return ctv.Result;
-        }
-
-        public static string GetDebugView(this Expression expr)
-        {
-            var prop = typeof(Expression).GetProperty("DebugView", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            return (string)prop.GetValue(PrepareForDebugViewVisitor.Instance.Visit(expr));
-        }
-
-        class PrepareForDebugViewVisitor : ExpressionVisitor
-        {
-            public static readonly PrepareForDebugViewVisitor Instance = new PrepareForDebugViewVisitor();
-
-            protected override Expression VisitMyParameter(MyParameterExpression parameter)
-            {
-                return Expression.Parameter(parameter.Type, (parameter.IsRoot ? "%" : (parameter.IsMutable ? "" : "!")) + parameter.Name);
-            }
-        }
-
-        class ContainsVisitor : ExpressionVisitor
-        {
-            public bool Result { get; set; }
-            public Expression Query { get; set; }
-
-            public override Expression Visit(Expression node)
-            {
-                if (ExpressionComparer.Instance.Equals(node, Query))
-                {
-                    Result = true;
-                }
-
-                if (Result) return node;
-                return base.Visit(node);
-            }
-        }
-
         public static KeyValuePair<T1, T2> SetKey<T1, T2>(this KeyValuePair<T1, T2> kvp, T1 key)
             => new KeyValuePair<T1, T2>(key, kvp.Value);
 
         public static KeyValuePair<T1, T2> SetValue<T1, T2>(this KeyValuePair<T1, T2> kvp, T2 value)
             => new KeyValuePair<T1, T2>(kvp.Key, value);
 
-
-        class ParameterFindingVisitor : ExpressionVisitor
+        public static IEnumerable<FieldInfo> GetAllFields(this Type type, bool instance = true)
         {
-            public HashSet<ParameterExpression> Parameters { get; } = new HashSet<ParameterExpression>(ExpressionComparer.Instance);
-
-            protected override Expression VisitParameter(ParameterExpression node)
+            while(type != typeof(object))
             {
-                Parameters.Add(node);
-                return base.VisitParameter(node);
+                foreach (var f in type.GetFields((instance ? BindingFlags.Instance : BindingFlags.Static) | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+                    yield return f;
+                type = type.BaseType;
             }
         }
     }

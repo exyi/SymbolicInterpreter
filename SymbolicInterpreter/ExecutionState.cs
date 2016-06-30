@@ -79,6 +79,7 @@ namespace SymbolicInterpreter
         [Pure]
         public ExecutionState ReplaceTopStack(int popCount, IEnumerable<Expression> newstack)
         {
+            if (newstack == null) newstack = Enumerable.Empty<Expression>();
             if (Stack.Length == popCount) return WithStack(newstack);
             if (popCount == Stack.Length) return WithStack(newstack);
             return WithStack(Stack.Take(Stack.Length - popCount).Concat(newstack));

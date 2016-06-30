@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace SymbolicInterpreter
 {
-    public class ExpressionComparer : IEqualityComparer<Expression>
+    public class ExpressionComparer : IEqualityComparer<Expression>, IEqualityComparer<MemberInfo>
     {
         public static readonly ExpressionComparer Instance = new ExpressionComparer();
 
@@ -32,6 +32,10 @@ namespace SymbolicInterpreter
         {
             return mi.MetadataToken * 17 + mi.DeclaringType.TypeHandle.Value.GetHashCode();
         }
+
+        bool IEqualityComparer<MemberInfo>.Equals(MemberInfo a, MemberInfo b) => Equals(a, b);
+        int IEqualityComparer<MemberInfo>.GetHashCode(MemberInfo a) => GetHashCode(a);
+
 
         [SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity")]
         public bool Equals(Expression x, Expression y)

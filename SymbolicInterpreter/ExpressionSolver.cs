@@ -545,7 +545,7 @@ namespace SymbolicInterpreter
                                 {
                                     var ecast = e.CastTo<UnaryExpression>();
                                     if (ecast.Operand.Type == node.Type && !e.Type.IsValueType) return ((UnaryExpression)e).Operand;
-                                    if (!ecast.Operand.Type.IsValueType && !e.Type.IsValueType && e.Type != typeof(object)) return Expression.Convert(ecast.Operand, node.Type);
+                                    if (!ecast.Operand.Type.IsValueType && !e.Type.IsValueType && (e.Type != typeof(object) || node.Type.IsInterface || node.Type.IsAssignableFrom(ecast.Operand.Type))) return Expression.Convert(ecast.Operand, node.Type);
                                 }
                                 if (e.Type == node.Type) return e;
                                 return null;

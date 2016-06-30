@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -16,12 +17,16 @@ namespace SymbolicInterpreter
 {
     public class SymbolicExecutor
     {
+        private static ConcurrentDictionary<MethodBase, DisassemblyResult> disassemblyCache = new ConcurrentDictionary<MethodBase, DisassemblyResult>();
         public static DisassemblyResult Disassembly(MethodBase method)
         {
-            var target = method.IsStatic ? null : method.DeclaringType;
+            return disassemblyCache.GetOrAdd(method, m =>
+            {
+                var target = m.IsStatic ? null : m.DeclaringType;
 
-            var op = Sigil.Disassembler<Action>.Disassemble(method, target);
-            return TransformDisassemblyResults((method as MethodInfo)?.ReturnType ?? typeof(void), op);
+                var op = Sigil.Disassembler<Action>.Disassemble(m, target);
+                return TransformDisassemblyResults((m as MethodInfo)?.ReturnType ?? typeof(void), op);
+            });
         }
 
         private static DisassemblyResult TransformDisassemblyResults<T>(Type returnType, Sigil.DisassembledOperations<T> op)
@@ -1779,6 +1784,8 @@ namespace SymbolicInterpreter
             Debug.Assert(method.GetMethodBody() != null);
 
             var disassembly = Disassembly(method);
+            var methodName = method.Name;
+            var dd = disassembly.ToString(); // DEBUG
             state = Execute(state, disassembly, args);
             if (state.Stack.Length > 0 && stack.Length != args.Count)
             {
@@ -1854,7 +1861,7 @@ namespace SymbolicInterpreter
 
         public ExecutionState InitObject(ExecutionState state, Expression thisExpression)
         {
-            foreach (var fld in thisExpression.Type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            foreach (var fld in thisExpression.Type.GetAllFields())
             {
                 state = state.WithSet(Expression.Field(thisExpression, fld), Expression.Default(fld.FieldType).Simplify());
             }

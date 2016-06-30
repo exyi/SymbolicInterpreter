@@ -59,25 +59,34 @@ namespace SymbolicInterpreter
             return false;
         }
 
-        public static Dictionary<MethodBase, MethodExecutor> specialExecutors = new Dictionary<MethodBase, MethodExecutor>
+        public static Dictionary<MethodBase, MethodExecutor> SpecialExecutors = new Dictionary<MethodBase, MethodExecutor>(ExpressionComparer.Instance)
         {
-            { typeof(IDictionary<,>).GetMethod("Add"), SpecialExecutors.Dictionary_InsertValue },
-            { typeof(Dictionary<,>).GetMethod("Insert", BindingFlags.Instance | BindingFlags.NonPublic), SpecialExecutors.Dictionary_InsertValue },
-            { typeof(IDictionary<,>).GetProperty("Item").GetMethod, SpecialExecutors.Dictionary_GetValue },
-            { typeof(IDictionary<,>).GetProperty("Item").SetMethod, SpecialExecutors.Dictionary_InsertValue },
-            { typeof(IDictionary<,>).GetMethod("ContainsKey"), SpecialExecutors.Dictionary_ContainsKey },
-            { typeof(IDictionary<,>).GetMethod("TryGetValue"), SpecialExecutors.Dictionary_TryGetValue },
-            { typeof(IEnumerable<>).GetMethod("GetEnumerator"), SpecialExecutors.Generic_GetEnumerator },
-            { typeof(Dictionary<,>.Enumerator).GetMethod("MoveNext"), SpecialExecutors.Dictionary_Enumerator_MoveNext },
-            { typeof(Exception).GetMethod("Init", BindingFlags.NonPublic | BindingFlags.Instance), SpecialExecutors.DoNothing },
-            { typeof(Dictionary<,>).GetConstructors().Single(c => c.GetParameters().Length == 2 && c.GetParameters()[0].ParameterType == typeof(int)), SpecialExecutors.Dictionary_Ctor },
-            { typeof(object).GetMethod("GetType"), SpecialExecutors.Object_GetType }
+            { typeof(IDictionary<,>).GetMethod("Add"), SymbolicInterpreter.SpecialExecutors.Dictionary_InsertValue },
+            { typeof(Dictionary<,>).GetMethod("Insert", BindingFlags.Instance | BindingFlags.NonPublic), SymbolicInterpreter.SpecialExecutors.Dictionary_InsertValue },
+            { typeof(IDictionary<,>).GetProperty("Item").GetMethod, SymbolicInterpreter.SpecialExecutors.Dictionary_GetValue },
+            { typeof(IDictionary<,>).GetProperty("Item").SetMethod, SymbolicInterpreter.SpecialExecutors.Dictionary_InsertValue },
+            { typeof(IDictionary<,>).GetMethod("ContainsKey"), SymbolicInterpreter.SpecialExecutors.Dictionary_ContainsKey },
+            { typeof(IDictionary<,>).GetMethod("TryGetValue"), SymbolicInterpreter.SpecialExecutors.Dictionary_TryGetValue },
+            { typeof(IEnumerable<>).GetMethod("GetEnumerator"), SymbolicInterpreter.SpecialExecutors.Generic_GetEnumerator },
+            { typeof(Dictionary<,>.Enumerator).GetMethod("MoveNext"), SymbolicInterpreter.SpecialExecutors.Dictionary_Enumerator_MoveNext },
+            { typeof(Exception).GetMethod("Init", BindingFlags.NonPublic | BindingFlags.Instance), SymbolicInterpreter.SpecialExecutors.DoNothing },
+            { typeof(Dictionary<,>).GetConstructors().Single(c => c.GetParameters().Length == 2 && c.GetParameters()[0].ParameterType == typeof(int)), SymbolicInterpreter.SpecialExecutors.Dictionary_Ctor },
+            { typeof(object).GetMethod("GetType"), SymbolicInterpreter.SpecialExecutors.Object_GetType }
         };
+
+        public static void RegisterAlternateImplementation(MethodBase methodToReplace, MethodBase alternativeImplementation)
+        {
+            SpecialExecutors.Add(methodToReplace, (exe, state, parameters, methodInfo) =>
+            {
+                return exe.CallMethod(alternativeImplementation, state, false);
+            });
+        }
+
         public static MethodExecutor GetSpecialExecutor(MethodBase minfo, IList<Expression> parameters)
         {
             if (minfo == null) return null;
             MethodExecutor result = null;
-            if (specialExecutors.TryGetValue(minfo, out result))
+            if (SpecialExecutors.TryGetValue(minfo, out result))
                 return result;
             if (!minfo.DeclaringType.IsInterface && minfo is MethodInfo)
             {
@@ -101,7 +110,7 @@ namespace SymbolicInterpreter
             }
             if(minfo.Name == "Invoke" && typeof(Delegate).IsAssignableFrom(minfo.DeclaringType))
             {
-                return SpecialExecutors.DelegateInvoke;
+                return SymbolicInterpreter.SpecialExecutors.DelegateInvoke;
             }
             return null;
         }
@@ -290,8 +299,8 @@ namespace SymbolicInterpreter
 
         public static ExecutionState Object_GetType(SymbolicExecutor exe, ExecutionState state, IList<Expression> parameters, MethodBase methodInfo)
         {
-            var p = parameters[0];
-            if (p is MyParameterExpression && p.CastTo<MyParameterExpression>().ExactType) return state.WithStack(new[] { Expression.Constant(p.Type, typeof(Type)) });
+            var p = parameters[0].ProveType();
+            if (p != null) return state.WithStack(new[] { Expression.Constant(p, typeof(Type)) });
             return null;
         }
     }

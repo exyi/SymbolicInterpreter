@@ -19,7 +19,7 @@ using DotVVM.Framework.Controls.Infrastructure;
 
 namespace Tests
 {
-    class SimpleDotvvmControl: DotvvmControl
+    class SimpleDotvvmControl: HtmlGenericControl
     {
         public string CssClass
         {
@@ -28,6 +28,11 @@ namespace Tests
         }
         public static readonly DotvvmProperty CssClassProperty
             = DotvvmProperty.Register<string, SimpleDotvvmControl>(c => c.CssClass, null);
+
+        public SimpleDotvvmControl(): base("div")
+        {
+
+        }
 
 
         protected override void AddAttributesToRender(IHtmlWriter writer, IDotvvmRequestContext context)
@@ -38,13 +43,13 @@ namespace Tests
 
         protected override void RenderBeginTag(IHtmlWriter writer, IDotvvmRequestContext context)
         {
-            writer.RenderBeginTag("div");
+            //writer.RenderBeginTag("div");
             base.RenderBeginTag(writer, context);
         }
 
         protected override void RenderEndTag(IHtmlWriter writer, IDotvvmRequestContext context)
         {
-            writer.RenderEndTag();
+            //writer.RenderEndTag();
             base.RenderEndTag(writer, context);
         }
     }
@@ -111,10 +116,25 @@ namespace Tests
         public void TestSimpleResolvedControl()
         {
             var tree = ParseSource(@"
-<cc:SimpleDotvvmControl CssClass='class123' />");
+<cc:SimpleDotvvmControl CssClass='{value: 'ahoj'}' data-attribute='{resource: '42'}' > neco uvnitr </cc:SimpleDotvvmControl>");
             var node = tree.Content.First(n => n.Metadata.Type == typeof(SimpleDotvvmControl));
             var state = controlAnalyzer.ExecuteControlLifecycle(node);
+
+            var a = controlAnalyzer.AnalyzeControlBehaviour(state, node);
             
+            var results = state.SideEffects.Where(s => s.Key == null).Select(k => k.Value).ToArray();
+        }
+
+        [TestMethod]
+        public void TestHtmlGenericControl()
+        {
+            var tree = ParseSource(@"
+<div class='class12' > neco uvnitr </div>");
+            var node = tree.Content.First(n => n.Metadata.Type == typeof(HtmlGenericControl));
+            var state = controlAnalyzer.ExecuteControlLifecycle(node);
+
+            var a = controlAnalyzer.AnalyzeControlBehaviour(state, node);
+
             var results = state.SideEffects.Where(s => s.Key == null).Select(k => k.Value).ToArray();
         }
 
