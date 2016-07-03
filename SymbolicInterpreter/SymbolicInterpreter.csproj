@@ -45,6 +45,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AddressOfExpression.cs" />
+    <Compile Include="ExecutionContext.cs" />
     <Compile Include="ExecutionState.cs" />
     <Compile Include="ExpressionComparer.cs" />
     <Compile Include="ExpressionSolver.cs" />

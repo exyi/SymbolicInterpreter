@@ -67,8 +67,6 @@ namespace DotVVM.Framework.SmartRendering
             //    Expression.New(
             //        control.Metadata.Type.GetConstructors().Single(c => c.GetParameters().Length == control.ConstructorParameters.Length),
             //        control.ConstructorParameters.Select(Expression.Constant))));
-            var mc = new MethodContext();
-
             var state = new ExecutionState(setExpressions: assignments.ToImmutableDictionary(k => k.Left, k => k.Right, ExpressionComparer.Instance), conditions: conditions.ToImmutableList());
 
             state = Executor.CallCtor(controlCtor, state.WithStack(ctorParams.Select(Expression.Constant)));
