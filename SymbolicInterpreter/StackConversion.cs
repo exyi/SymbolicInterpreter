@@ -113,5 +113,11 @@ namespace SymbolicInterpreter
             }
             throw new NotSupportedException();
         }
+
+		public static Expression UnwrapAddressOf(Expression expression)
+		{
+			if (expression is AddressOfExpression) return expression.CastTo<AddressOfExpression>().Object;
+			return expression;
+		}
     }
 }

@@ -224,7 +224,7 @@ namespace DotVVM.Framework.SmartRendering
 				else throw new NotSupportedException();
 			}
 			AssignmentInlining(output);
-			output = AddThemTogether(output).ToList();
+			output = AddThemTogether(output.SelectMany(ExpandExpressions)).ToList();
 			var formattedOutput = FormatOutputExpression(output, state);
 			var visitor = new ResultExpressionSimplifiingVisitor() { ControlInitialization = controlInitialization };
 			var renderedOutput = output.Select(e => CreateOutputFromExpression(e, controlInitialization, control, visitor)).ToArray();
@@ -241,20 +241,59 @@ namespace DotVVM.Framework.SmartRendering
 			{
 				return new RenderedText(expression.GetConstantValue().ToString());
 			}
+			{
+
+			}
 			expression = simplifiingVisitor.Visit(expression);
 			return new RenderExpressionValue(expression);
+		}
+
+		private static IEnumerable<Expression> ExpandExpressions(Expression e)
+		{
+			if (e is RenderControlsExpression || e.IsConstant()) { return new[] { e }; }
+
+			if (e.NodeType == ExpressionType.Call)
+			{
+				var methodCallExpression = e.CastTo<MethodCallExpression>();
+				if (methodCallExpression.Method.Name == nameof(WebUtility.HtmlEncode) && methodCallExpression.Method?.DeclaringType == typeof(WebUtility) && methodCallExpression.Arguments.Single().NodeType == ExpressionType.Add)
+				{
+					var binaryExpression = methodCallExpression.Arguments.Single() as BinaryExpression;
+					return ExpandExpressions(binaryExpression.Update(methodCallExpression.Update(null, new[] { binaryExpression.Left }), binaryExpression.Conversion, methodCallExpression.Update(null, new[] { binaryExpression.Right })).Simplify(evaluateFunctions: true));
+				}
+			}
+			if (e.NodeType == ExpressionType.Add && e.Type == typeof(string))
+			{
+				return ExpandExpressions(e.CastTo<BinaryExpression>().Left).Concat(ExpandExpressions(e.CastTo<BinaryExpression>().Right));
+			}
+			return new[] { e };
 		}
 
 		private static IEnumerable<Expression> AddThemTogether(IEnumerable<Expression> exprs)
 		{
 			string currentString = null;
-			foreach (var e in exprs)
+			foreach (var effff in exprs)
 			{
+				var e = effff;
 				if (e is RenderControlsExpression) yield return e;
 				else if (e.IsConstant()) currentString += e.GetConstantValue().ToString();
 				else
 				{
 					if (!string.IsNullOrEmpty(currentString)) { yield return Expression.Constant(currentString); currentString = null; }
+					//if (e.NodeType == ExpressionType.Call)
+					//{
+					//	var methodCallExpression = e.CastTo<MethodCallExpression>();
+					//	if (methodCallExpression.Method.Name == nameof(WebUtility.HtmlEncode) && methodCallExpression.Method?.DeclaringType == typeof(WebUtility) && methodCallExpression.Arguments.Single().NodeType == ExpressionType.Add)
+					//	{
+					//		var binaryExpression = methodCallExpression.Arguments.Single() as BinaryExpression;
+					//		e = binaryExpression.Update(methodCallExpression.Update(null, new[] { binaryExpression.Left }), binaryExpression.Conversion, methodCallExpression.Update(null, new[] { binaryExpression.Right })).Simplify(evaluateFunctions: true);
+					//	}
+					//}
+					//if (e.NodeType == ExpressionType.Add && e.Type == typeof(string))
+					//{
+					//	// ` [e cast(BinaryExpression) dup .Left, .Right] AddThemTogether() foreach { yield }
+					//	foreach (var rr in AddThemTogether(new[] { e.CastTo<BinaryExpression>().Left, e.CastTo<BinaryExpression>().Right }))
+					//		yield return rr;
+					//}
 					yield return e;
 				}
 			}
@@ -403,7 +442,7 @@ namespace DotVVM.Framework.SmartRendering
 
 			public override Expression Visit(Expression node)
 			{
-				if (ExecutionState.TryFindAssignment(node) != null) { Parameters.Add(node); }
+				if (node != null && ExecutionState.TryFindAssignment(node) != null) { Parameters.Add(node); }
 				return base.Visit(node);
 			}
 

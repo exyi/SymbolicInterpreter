@@ -58,10 +58,10 @@ namespace SymbolicInterpreter
             return null;
         }
 
-        public static Expression Simplify(this Expression expr, ExecutionState state = null, bool trackCondition = true)
+		public static Expression Simplify(this Expression expr, ExecutionState state = null, bool trackCondition = true, bool evaluateFunctions = false)
         {
             Debug.Assert(expr != null);
-            var s = new SimplificationVisitor();
+            var s = new SimplificationVisitor() { EvaluateFunctions = evaluateFunctions };
             return s.Visit(expr);
         }
 
@@ -245,7 +245,9 @@ namespace SymbolicInterpreter
 
         class SimplificationVisitor : ExpressionVisitor
         {
-            public override Expression Visit(Expression node)
+			public bool EvaluateFunctions { get; set; }
+
+			public override Expression Visit(Expression node)
             {
                 if (node == null) return null;
                 var result = base.Visit(node);
@@ -336,11 +338,11 @@ namespace SymbolicInterpreter
             protected override Expression VisitMethodCall(MethodCallExpression node)
             {
                 node = (MethodCallExpression)base.VisitMethodCall(node);
-                //if (node.Object?.IsConstant() != false && node.Arguments.All(s => s.IsConstant()))
-                //{
-                //    return Expression.Constant(node.Method.Invoke(node.Object?.GetConstantValue(), node.Arguments.Select(a => a.GetConstantValue()).ToArray()), node.Type);
-                //}
-                if (node.Object?.NodeType == ExpressionType.Convert)
+				if (EvaluateFunctions && node.Object?.IsConstant() != false && node.Arguments.All(s => s.IsConstant()))
+				{
+					return Expression.Constant(node.Method.Invoke(node.Object?.GetConstantValue(), node.Arguments.Select(a => a.GetConstantValue()).ToArray()), node.Type);
+				}
+				if (node.Object?.NodeType == ExpressionType.Convert)
                 {
                     var expr = node.Object.CastTo<UnaryExpression>().Operand;
                     if (node.Method.DeclaringType.IsAssignableFrom(expr.Type))

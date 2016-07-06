@@ -25,5 +25,10 @@ namespace DotVVM.Framework.SmartRendering
             this.LifecycleEvents = lifecycleEvents?.ToImmutableArray() ?? ImmutableArray<Expression>.Empty;
             this.Renders = renders?.ToImmutableArray() ?? ImmutableArray<RenderedOutput>.Empty;
         }
-    }
+
+		public override string ToString()
+		{
+			return string.Concat(Renders.Select(r => r.GetDebugText()));
+		}
+	}
 }

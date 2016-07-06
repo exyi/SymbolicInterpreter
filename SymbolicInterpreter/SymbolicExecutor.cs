@@ -256,9 +256,9 @@ namespace SymbolicInterpreter
 
                     else if (op == OpCodes.Call || op == OpCodes.Callvirt)
                     {
-                        bool? constrained;
+                        Type constrained;
                         var method = instr.GetParameterMethod(out constrained);
-                        state = CallMethod(method, state.WithStack(stack), op == OpCodes.Callvirt);
+                        state = CallMethod(method, state.WithStack(stack), op == OpCodes.Callvirt, constrained);
                         stack = new Stack<Expression>(state.Stack);
                     }
 
@@ -1684,14 +1684,14 @@ namespace SymbolicInterpreter
         }
 
         [SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity")]
-        public ExecutionState CallMethod(MethodBase method, ExecutionState state, bool virt)
+        public ExecutionState CallMethod(MethodBase method, ExecutionState state, bool virt, Type constrained = null)
         {
             Debug.Assert(state.Stack.Length >= method.GetParameters().Length + (method.IsStatic ? 0 : 1));
             state = state.ResolveStack();
             var stack = state.Stack;
             var args = new List<Expression>();
             var methodParameters = method.GetParameters();
-            if (!method.IsStatic) args.Add(stack[stack.Length - methodParameters.Length - 1]);
+            if (!method.IsStatic) args.Add(UnwrapAddressOf(stack[stack.Length - methodParameters.Length - 1]));
             args.AddRange(methodParameters.Zip(stack.Skip(stack.Length - methodParameters.Length), (p, a) => ImplicitConvertTo(a, p.ParameterType).Simplify()));
 
             Debug.Assert(args.Count == methodParameters.Length + (method.IsStatic ? 0 : 1));
@@ -1727,7 +1727,7 @@ namespace SymbolicInterpreter
                 }
                 if (reallyVirtual)
                 {
-                    if (!instanceType.IsSealed)
+                    if (!instanceType.IsSealed && !(instanceType.IsByRef && instanceType.GetElementType().IsValueType))
                         instanceType = args[0].Resolve(state).ProveType(state);
                     if (instanceType == null)
                     {
@@ -2101,12 +2101,12 @@ labels(
             return (Type)Parameters[0];
         }
 
-        public MethodBase GetParameterMethod(out bool? constrained)
+        public MethodBase GetParameterMethod(out Type constrained)
         {
             constrained = null;
             if (Parameters.Length > 1)
             {
-                constrained = (bool?)Parameters[1];
+                constrained = (Type)Parameters[1];
             }
             return (MethodBase)Parameters[0];
         }

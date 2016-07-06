@@ -12,6 +12,7 @@ namespace DotVVM.Framework.SmartRendering
 {
     public abstract class RenderedOutput
     {
+		public abstract string GetDebugText();
     }
     public class RenderedText: RenderedOutput
     {
@@ -21,7 +22,9 @@ namespace DotVVM.Framework.SmartRendering
         }
 
         public string Text { get; }
-    }
+
+		public override string GetDebugText() => Text;
+	}
     public class RenderControls: RenderedOutput
     {
         public ImmutableList<ResolvedControl> Controls { get; }
@@ -30,7 +33,9 @@ namespace DotVVM.Framework.SmartRendering
         {
             Controls = controls;
         }
-    }
+
+		public override string GetDebugText() => "{{" + Controls.Count + " controls}}";
+	}
 
     public class RenderControlsExpression : Expression
     {
@@ -43,18 +48,18 @@ namespace DotVVM.Framework.SmartRendering
             Controls = controls;
         }
     }
-    public class RenderBindingValue : RenderedOutput
-    {
-        public ResolvedBinding Binding { get; }
-        public ResolvedControl ContextControl { get; }
-        public DotvvmProperty ContextProperty { get; }
-        public RenderBindingValue(ResolvedBinding binding, ResolvedControl contextControl, DotvvmProperty contextProperty)
-        {
-            Binding = binding;
-            ContextControl = contextControl;
-            ContextProperty = contextProperty;
-        }
-    }
+    //public class RenderBindingValue : Renderedoutput
+    //{
+    //    public resolvedbinding binding { get; }
+    //    public resolvedcontrol contextcontrol { get; }
+    //    public dotvvmproperty contextproperty { get; }
+    //    public renderbindingvalue(resolvedbinding binding, resolvedcontrol contextcontrol, dotvvmproperty contextproperty)
+    //    {
+    //        binding = binding;
+    //        contextcontrol = contextcontrol;
+    //        contextproperty = contextproperty;
+    //    }
+    //}
     public class RenderExpressionValue: RenderedOutput
     {
         public Expression Expression { get; }
@@ -62,7 +67,9 @@ namespace DotVVM.Framework.SmartRendering
         {
             Expression = expr;
         }
-    }
+
+		public override string GetDebugText() => "{{" + Expression.ToString() + "}}";
+	}
     //public class EvaluateExpression: RenderedOutput
     //{
     //    public Expression Expression { get; }

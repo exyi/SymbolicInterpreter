@@ -32,6 +32,8 @@ namespace DotVVM.Framework.SmartRendering
             //MethodAnalyzer.SpecialExecutors.Add(typeof(DotvvmBindableObject).GetProperty(nameof(DotvvmBindableObject.GetClosestWithPropertyValue)).GetMethod, DotvvmControl_GetDeclaredProperties);
             MethodAnalyzer.RegisterAlternateImplementation(typeof(DotvvmBindableObject).GetMethod("GetValue"), typeof(DotvvmSpecialExecutors).GetMethod("DotvvmControl_GetValue_AI", BindingFlags.Static | BindingFlags.NonPublic));
             MethodAnalyzer.RegisterAlternateImplementation(typeof(HtmlGenericControl).GetMethod("AddHtmlAttribute", BindingFlags.NonPublic | BindingFlags.Instance), typeof(DotvvmSpecialExecutors).GetMethod("HtmlGenericControl_AddHtmlAttribute_AI", BindingFlags.Static | BindingFlags.NonPublic));
+            MethodAnalyzer.RegisterAlternateImplementation(typeof(IHtmlWriter).GetMethod(nameof(IHtmlWriter.AddKnockoutDataBind), BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(string), typeof(string) }, null), typeof(DotvvmSpecialExecutors).GetMethod("IHtmlWriter_AddKnockoutDataBind_StringExpression_AI", BindingFlags.Static | BindingFlags.NonPublic));
+            MethodAnalyzer.RegisterAlternateImplementation(typeof(IHtmlWriter).GetMethod(nameof(IHtmlWriter.AddKnockoutDataBind), BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(string), typeof(KnockoutBindingGroup) }, null), typeof(DotvvmSpecialExecutors).GetMethod("IHtmlWriter_AddKnockoutDataBind_BindingGroup_AI", BindingFlags.Static | BindingFlags.NonPublic));
         }
 
         private static ExecutionState IStaticValueBinding_Evaluate(SymbolicExecutor exe, ExecutionState state, IList<Expression> parameters, MethodBase methodInfo)
@@ -108,7 +110,18 @@ namespace DotVVM.Framework.SmartRendering
                 writer.AddAttribute(name, (string)asstaticValueBinding.Evaluate(control, null));
         }
 
-        public static Expression GetDictionaryIndexer(Expression target, Expression index)
+		static void IHtmlWriter_AddKnockoutDataBind_StringExpression_AI(IHtmlWriter writer, string key, string expression)
+		{
+			writer.AddAttribute("data-bind", key + ":" + expression);
+		}
+
+		static void IHtmlWriter_AddKnockoutDataBind_BindingGroup_AI(IHtmlWriter writer, string key, KnockoutBindingGroup bindingGroup)
+		{
+			if (bindingGroup.IsEmpty) return;
+			writer.AddAttribute("data-bind", key + ":" + bindingGroup.ToString());
+		}
+
+		public static Expression GetDictionaryIndexer(Expression target, Expression index)
             => Expression.MakeIndex(target, target.Type.GetProperty("Item"), new[] { index });
 
         public static ExecutionState DotvvmControl_GetDeclaredProperties(SymbolicExecutor exe, ExecutionState state, IList<Expression> parameters, MethodBase methodInfo)
@@ -119,5 +132,6 @@ namespace DotVVM.Framework.SmartRendering
             var props = DotvvmProperty.ResolveProperties(thisType);
             return state.WithStack(new[] { Expression.Constant(props) });
         }
+		
     }
 }
