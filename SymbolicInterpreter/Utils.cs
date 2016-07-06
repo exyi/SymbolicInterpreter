@@ -98,5 +98,12 @@ namespace SymbolicInterpreter
                 type = type.BaseType;
             }
         }
+
+        public static TValue FindOrDefault<TKey, TValue>(this IReadOnlyDictionary<TKey, TValue> dict, TKey key)
+        {
+            TValue result;
+            dict.TryGetValue(key, out result);
+            return result;
+        }
     }
 }

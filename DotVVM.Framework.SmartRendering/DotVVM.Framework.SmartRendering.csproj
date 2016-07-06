@@ -94,6 +94,8 @@
     <Compile Include="Ext.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RenderedOutput.cs" />
+    <Compile Include="ResultExpressionSimplifiingVisitor.cs" />
+    <Compile Include="ResultHelperFunctions.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />

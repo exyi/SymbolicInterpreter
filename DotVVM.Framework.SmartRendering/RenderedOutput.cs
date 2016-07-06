@@ -1,4 +1,5 @@
-﻿using DotVVM.Framework.Compilation.ControlTree.Resolved;
+﻿using DotVVM.Framework.Binding;
+using DotVVM.Framework.Compilation.ControlTree.Resolved;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -42,19 +43,18 @@ namespace DotVVM.Framework.SmartRendering
             Controls = controls;
         }
     }
-    //public class RenderBindingValue: RenderedOutput
-    //{
-    //    public ResolvedBinding Binding { get; }
-    //    public ImmutableList<LambdaExpression> PostProcess { get; }
-
-    //    public RenderBindingValue(ResolvedBinding binding, ImmutableList<LambdaExpression> postProcess = null)
-    //    {
-    //        Binding = binding;
-    //        PostProcess = postProcess ?? ImmutableList<LambdaExpression>.Empty;
-    //    }
-
-    //    public RenderBindingValue AddPostProcess(LambdaExpression lamdaExpression) => new RenderBindingValue(Binding, PostProcess.Add(lamdaExpression));
-    //}
+    public class RenderBindingValue : RenderedOutput
+    {
+        public ResolvedBinding Binding { get; }
+        public ResolvedControl ContextControl { get; }
+        public DotvvmProperty ContextProperty { get; }
+        public RenderBindingValue(ResolvedBinding binding, ResolvedControl contextControl, DotvvmProperty contextProperty)
+        {
+            Binding = binding;
+            ContextControl = contextControl;
+            ContextProperty = contextProperty;
+        }
+    }
     public class RenderExpressionValue: RenderedOutput
     {
         public Expression Expression { get; }

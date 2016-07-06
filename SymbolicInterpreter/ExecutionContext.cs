@@ -8,25 +8,38 @@ using System.Threading.Tasks;
 
 namespace SymbolicInterpreter
 {
-    public class ExecutionContext
+    // type MethodExecutionContext { MethodInfo Method; MethodExecutionInfo; this Parent = null; noctor MethodExecState Stack ToDoStates = new() }
+    public class MethodExecutionContext
     {
-        //public Stack<ToExectute> ToDoList { get; }
         public MethodInfo Method { get; }
-        public MethodContext MethodContext { get; }
-        public ExecutionContext Parent { get; }
+        public MethodExecutionInfo MethodExecutionInfo { get; }
+        public Stack<MethodExecState> ToDoStates { get; } = new Stack<MethodExecState>();
+        public List<ExecutionState> ResultStates { get; } = new List<ExecutionState>();
+        public MethodExecutionContext Parent { get; }
+
+        public MethodExecutionContext(MethodInfo method, MethodExecutionInfo methodExecutionInfo, MethodExecutionContext parent)
+        {
+            this.Method = method;
+            this.MethodExecutionInfo = methodExecutionInfo;
+            this.Parent = parent;
+        }
     }
 
     // struct type MethodExecCoreInfo { ExecutionState State; int EIP }
 
-    public struct MethodExecCoreInfo
+    public struct MethodExecState
     {
-        public readonly ExecutionState State;
+        public readonly ExecutionState MemState;
         public readonly int EIP;
+        public readonly int MergeOn;
+        public readonly ExecutionState MergeWith;
 
-        public MethodExecCoreInfo(ExecutionState state, int eip)
+        public MethodExecState(ExecutionState state, int eip, int mergeOn, ExecutionState mergeWith)
         {
-            this.State = state;
+            this.MemState = state;
             this.EIP = eip;
+            this.MergeOn = mergeOn;
+            this.MergeWith = mergeWith;
         }
     }
 

@@ -105,38 +105,44 @@ namespace Tests
             var x = se.Execute(new ExecutionState(), d, new[] { thisP, writerP });
         }
 
-        private ExecutionState ExecNode(string markup)
+		private ControlBehaviour AnalyzeControl(string markup)
+		{
+			var tree = ParseSource(markup);
+			var node = tree.Content.First(n => n.Metadata.Type != typeof(RawLiteral));
+			var initialized = controlAnalyzer.CreateExecutionState(node);
+			var state = controlAnalyzer.ExecuteControlLifecycle(initialized.ExecutionState);
+			return controlAnalyzer.AnalyzeControlBehaviour(state, initialized, node);
+		}
+
+		private ExecutionState ExecNode(string markup)
         {
             var tree = ParseSource(markup);
             var node = tree.Content.First(n => n.Metadata.Type != typeof(RawLiteral));
-            return controlAnalyzer.ExecuteControlLifecycle(node);
+            var initialized = controlAnalyzer.CreateExecutionState(node);
+            return controlAnalyzer.ExecuteControlLifecycle(initialized.ExecutionState);
         }
 
         [TestMethod]
         public void TestSimpleResolvedControl()
         {
-            var tree = ParseSource(@"
+            var a = AnalyzeControl(@"
 <cc:SimpleDotvvmControl CssClass='{value: 'ahoj'}' data-attribute='{resource: '42'}' > neco uvnitr </cc:SimpleDotvvmControl>");
-            var node = tree.Content.First(n => n.Metadata.Type == typeof(SimpleDotvvmControl));
-            var state = controlAnalyzer.ExecuteControlLifecycle(node);
-
-            var a = controlAnalyzer.AnalyzeControlBehaviour(state, node);
-            
-            var results = state.SideEffects.Where(s => s.Key == null).Select(k => k.Value).ToArray();
         }
 
         [TestMethod]
         public void TestHtmlGenericControl()
         {
-            var tree = ParseSource(@"
+            var a = AnalyzeControl(@"
 <div class='class12' > neco uvnitr </div>");
-            var node = tree.Content.First(n => n.Metadata.Type == typeof(HtmlGenericControl));
-            var state = controlAnalyzer.ExecuteControlLifecycle(node);
-
-            var a = controlAnalyzer.AnalyzeControlBehaviour(state, node);
-
-            var results = state.SideEffects.Where(s => s.Key == null).Select(k => k.Value).ToArray();
         }
+
+		[TestMethod]
+		public void TestJavascriptBinding()
+		{
+			var a = AnalyzeControl(@"
+@viewModel System.String, mscorlib
+<div class='{value: _this}' />");
+		}
 
         [TestMethod]
         public void TestResolvedControl1()
@@ -145,7 +151,7 @@ namespace Tests
 <div class='ahoj' />");
             var node = tree.Content.First(n => n.Metadata.Type == typeof(HtmlGenericControl));
 
-            var state = controlAnalyzer.CreateExecutionState(node);
+            var state = controlAnalyzer.CreateExecutionState(node).ExecutionState;
             state = CallMethodHere(state, "GetTagName");
             Assert.AreEqual(state.Stack.Single().Resolve(state).GetConstantValue(), "div");
         }
@@ -162,13 +168,14 @@ namespace Tests
 <div class='ahoj' />");
             var node = tree.Content.First(n => n.Metadata.Type == typeof(HtmlGenericControl));
 
-            var state = controlAnalyzer.CreateExecutionState(node);
+            var state = controlAnalyzer.CreateExecutionState(node).ExecutionState;
             state = state.WithStack(state.Stack.Concat(new[] { MyExpression.RootParameter(typeof(IHtmlWriter), "writer") }));
             state = CallMethodHere(state, "WriteTag");
 
             Assert.AreEqual(state.SideEffects.Count, 1);
             Assert.AreEqual(state.SideEffects.Single().Value.NodeType, ExpressionType.Call);
         }
+
         private static void WriteTag(HtmlGenericControl control, IHtmlWriter writer)
         {
             writer.WriteUnencodedText($"<{control.TagName}>");

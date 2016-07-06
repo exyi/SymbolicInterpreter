@@ -262,6 +262,12 @@ namespace SymbolicInterpreter
             if (lambda.Parameters.Count != 1) throw new ArgumentException();
             return lambda.ReplaceParamsOneUse(expr);
         }
+
+        public static Expression UnwrapConverts(this Expression expr)
+        {
+            if (expr.NodeType == ExpressionType.Convert) return expr.CastTo<UnaryExpression>().Operand.UnwrapConverts();
+            else return expr;
+        }
     }
 
     /// <summary>
