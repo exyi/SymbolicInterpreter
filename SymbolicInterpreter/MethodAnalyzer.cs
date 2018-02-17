@@ -26,7 +26,9 @@ namespace SymbolicInterpreter
 				typeof(string).GetMethod(nameof(String.Join), BindingFlags.Static | BindingFlags.Public, null, new[] { typeof(string), typeof(IEnumerable<string>) }, null),
 				typeof(SpecialExecutors).GetMethod(nameof(SymbolicInterpreter.SpecialExecutors.String_Join_string_IEnumerable_AI), BindingFlags.Static | BindingFlags.Public));
 			RegisterAlternateImplementation(
-				typeof(string).GetMethods(BindingFlags.Static | BindingFlags.Public).Where(m => m.Name == "Join" && m.GetParameters().Length == 2 && m.IsGenericMethod).Single(),
+				typeof(string).GetMethods(BindingFlags.Static | BindingFlags.Public)
+				.Where(m => m.Name == "Join" && m.GetParameters().Length == 2 && m.GetParameters()[0].ParameterType == typeof(string) && m.IsGenericMethod)
+				.Single(),
 				typeof(SpecialExecutors).GetMethod(nameof(SymbolicInterpreter.SpecialExecutors.String_Join_T_IEnumerable_AI), BindingFlags.Static | BindingFlags.Public));
 		}
 		private static HashSet<string> stringPureMethods = new HashSet<string> { nameof(string.Join) };
@@ -78,7 +80,7 @@ namespace SymbolicInterpreter
 		public static Dictionary<MethodBase, MethodExecutor> SpecialExecutors = new Dictionary<MethodBase, MethodExecutor>(ExpressionComparer.Instance)
 		{
 			{ typeof(IDictionary<,>).GetMethod("Add"), SymbolicInterpreter.SpecialExecutors.Dictionary_InsertValue },
-			{ typeof(Dictionary<,>).GetMethod("Insert", BindingFlags.Instance | BindingFlags.NonPublic), SymbolicInterpreter.SpecialExecutors.Dictionary_InsertValue },
+			{ typeof(Dictionary<,>).GetMethod("TryInsert", BindingFlags.Instance | BindingFlags.NonPublic), SymbolicInterpreter.SpecialExecutors.Dictionary_InsertValue },
 			{ typeof(IDictionary<,>).GetProperty("Item").GetMethod, SymbolicInterpreter.SpecialExecutors.Dictionary_GetValue },
 			{ typeof(IDictionary<,>).GetProperty("Item").SetMethod, SymbolicInterpreter.SpecialExecutors.Dictionary_InsertValue },
 			{ typeof(IDictionary<,>).GetMethod("ContainsKey"), SymbolicInterpreter.SpecialExecutors.Dictionary_ContainsKey },
@@ -220,6 +222,7 @@ namespace SymbolicInterpreter
 		{
 			Debug.Assert(parameters[1].NodeType == ExpressionType.Constant);
 			state = state.WithSet(GetDictionaryIndexer(parameters[0], parameters[1]), parameters[2]);
+			// TODO: TryInsert has a third parameter - the InsertionBehavior
 			var version = state.TryFindAssignment(Expression.Field(parameters[0], "version"));
 			if (version != null) state = state.WithSet(Expression.Field(parameters[0], "version"), Expression.Add(version, Expression.Constant(1)).Simplify());
 			return state.ClearStack();

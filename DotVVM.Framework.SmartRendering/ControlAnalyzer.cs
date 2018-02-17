@@ -118,22 +118,24 @@ namespace DotVVM.Framework.SmartRendering
 				state = SpecialExecutors.Dictionary_InsertValue(Executor, state, new[] { propertiesRoot, Expression.Constant(property.Key), StackConversion.ImplicitConvertTo(value, typeof(object)).Simplify() }, null);
 			}
 
+			// TODO: property propertygroups
 			var attributes = typeof(IControlWithHtmlAttributes).IsAssignableFrom(control.Metadata.Type) ? Executor.CallMethod(typeof(IControlWithHtmlAttributes).GetProperty("Attributes").GetMethod, state.WithStack(new[] { thisParam }), true).Stack.Single() : null;
-			if (control.HtmlAttributes != null) foreach (var attribute in control.HtmlAttributes)
+			foreach (var attributeProp in control.Properties.Keys.OfType<GroupedDotvvmProperty>().Where(p => p.PropertyGroup.Prefixes.Contains("")))
 				{
+					var attribute = control.Properties[attributeProp];
 					if (attributes == null) throw new Exception($"Control '{thisParam.Type}' does not support html attributes.");
 					Expression value;
-					if (attribute.Value is ResolvedBinding)
+					if (attribute is ResolvedPropertyBinding propertyBinding)
 					{
-						var binding = attribute.Value.CastTo<ResolvedBinding>();
+						var binding = propertyBinding.Binding;
 						value = MyExpression.RootParameter(binding.BindingType, SymbolicExecutor.NameParam("bindingr"), exactType: true, notNull: true);
 						bindingAssignment.Add(value, binding);
 					}
 					else
 					{
-						value = Expression.Constant(attribute.Value);
+						value = Expression.Constant(attribute.CastTo<ResolvedPropertyValue>().Value);
 					}
-					state = SpecialExecutors.Dictionary_InsertValue(Executor, state, new[] { attributes, Expression.Constant(attribute.Key), StackConversion.ImplicitConvertTo(value, typeof(object)).Simplify() }, null);
+					state = SpecialExecutors.Dictionary_InsertValue(Executor, state, new[] { attributes, Expression.Constant(attributeProp.GroupMemberName), StackConversion.ImplicitConvertTo(value, typeof(object)).Simplify() }, null);
 				}
 
 

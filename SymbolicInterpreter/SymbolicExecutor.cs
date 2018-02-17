@@ -713,18 +713,13 @@ namespace SymbolicInterpreter
                     }
 
                     else if (op == OpCodes.Ldelem || op == OpCodes.Ldelem_I || op == OpCodes.Ldelem_I1 || op == OpCodes.Ldelem_I2 || op == OpCodes.Ldelem_I4 || op == OpCodes.Ldelem_I8 ||
-                        op == OpCodes.Ldelem_R4 || op == OpCodes.Ldelem_R8 || op == OpCodes.Ldelem_U1 || op == OpCodes.Ldelem_U2 || op == OpCodes.Ldelem_U4)
+                        op == OpCodes.Ldelem_R4 || op == OpCodes.Ldelem_R8 || op == OpCodes.Ldelem_U1 || op == OpCodes.Ldelem_U2 || op == OpCodes.Ldelem_U4 || op == OpCodes.Ldelem_Ref)
                     {
+                        // TODO: correct the types
                         var type = instr.GetParameterType();
                         var index = stack.Pop();
                         var array = stack.Pop();
                         stack.Push(Expression.ArrayIndex(array, index));
-                    }
-
-                    else if (op == OpCodes.Ldelem_Ref)
-                    {
-                        // load reference
-                        throw new NotSupportedException();
                     }
 
                     else if (op == OpCodes.Ldelema)

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using DotVVM.Framework.SmartRendering;
 using System.Reflection;
@@ -71,7 +72,7 @@ namespace Tests
 
             configuration = DotvvmConfiguration.CreateDefault();
             configuration.Markup.AddAssembly(typeof(SymExcTests).Assembly.FullName);
-            configuration.Markup.AddCodeControl("cc", typeof(SimpleDotvvmControl));
+            configuration.Markup.AddCodeControls("cc", typeof(SimpleDotvvmControl));
             controlTreeResolver = configuration.ServiceLocator.GetService<IControlTreeResolver>();
             sexec = new SymbolicExecutor();
             controlAnalyzer = new ControlAnalyzer(sexec);
@@ -81,7 +82,7 @@ namespace Tests
         private ResolvedTreeRoot ParseSource(string markup, string fileName = "default.dothtml")
         {
             var tokenizer = new DothtmlTokenizer();
-            tokenizer.Tokenize(new StringReader(markup));
+            tokenizer.Tokenize(markup);
 
             var parser = new DothtmlParser();
             var tree = parser.Parse(tokenizer.Tokens);

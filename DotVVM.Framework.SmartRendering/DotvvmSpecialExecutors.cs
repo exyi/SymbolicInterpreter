@@ -30,7 +30,7 @@ namespace DotVVM.Framework.SmartRendering
             MethodAnalyzer.AddResultInterface(typeof(DotvvmControl), m => m.Name == "RenderChildren");
             MethodAnalyzer.SpecialExecutors.Add(typeof(DotvvmBindableObject).GetMethod("GetDeclaredProperties", BindingFlags.Instance | BindingFlags.NonPublic), DotvvmControl_GetDeclaredProperties);
             //MethodAnalyzer.SpecialExecutors.Add(typeof(DotvvmBindableObject).GetProperty(nameof(DotvvmBindableObject.GetClosestWithPropertyValue)).GetMethod, DotvvmControl_GetDeclaredProperties);
-            MethodAnalyzer.RegisterAlternateImplementation(typeof(DotvvmBindableObject).GetMethod("GetValue"), typeof(DotvvmSpecialExecutors).GetMethod("DotvvmControl_GetValue_AI", BindingFlags.Static | BindingFlags.NonPublic));
+            MethodAnalyzer.RegisterAlternateImplementation(typeof(DotvvmBindableObject).GetMethods().Single(m => m.Name == "GetValue" && !m.IsGenericMethod && m.GetParameters().Select(p => p.ParameterType).SequenceEqual(new [] { typeof(DotvvmProperty), typeof(bool) })), typeof(DotvvmSpecialExecutors).GetMethod("DotvvmControl_GetValue_AI", BindingFlags.Static | BindingFlags.NonPublic));
             MethodAnalyzer.RegisterAlternateImplementation(typeof(HtmlGenericControl).GetMethod("AddHtmlAttribute", BindingFlags.NonPublic | BindingFlags.Instance), typeof(DotvvmSpecialExecutors).GetMethod("HtmlGenericControl_AddHtmlAttribute_AI", BindingFlags.Static | BindingFlags.NonPublic));
             MethodAnalyzer.RegisterAlternateImplementation(typeof(IHtmlWriter).GetMethod(nameof(IHtmlWriter.AddKnockoutDataBind), BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(string), typeof(string) }, null), typeof(DotvvmSpecialExecutors).GetMethod("IHtmlWriter_AddKnockoutDataBind_StringExpression_AI", BindingFlags.Static | BindingFlags.NonPublic));
             MethodAnalyzer.RegisterAlternateImplementation(typeof(IHtmlWriter).GetMethod(nameof(IHtmlWriter.AddKnockoutDataBind), BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(string), typeof(KnockoutBindingGroup) }, null), typeof(DotvvmSpecialExecutors).GetMethod("IHtmlWriter_AddKnockoutDataBind_BindingGroup_AI", BindingFlags.Static | BindingFlags.NonPublic));
@@ -81,7 +81,7 @@ namespace DotVVM.Framework.SmartRendering
                 if (inherit && !property.IsSet(control, false))
                 {
                     int n;
-                    control = control.GetClosestWithPropertyValue(out n, d => property.IsSet(d, false));
+                    control = control.GetClosestWithPropertyValue(out n, (d, _) => property.IsSet(d, false));
                 }
                 if (value is IStaticValueBinding)
                 {
